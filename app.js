@@ -11,35 +11,43 @@ process.on("unhandledRejection", e => console.error("[unhandledRejection]", e));
 if (!DATABASE_URL || !JWT_SECRET) throw new Error("Не заданы переменные окружения: " + [!DATABASE_URL && "DATABASE_URL", !JWT_SECRET && "JWT_SECRET"].filter(Boolean).join(", "));
 const prod = NODE_ENV === "production";
 const sslOff = /localhost|127\.0\.0\.1/.test(DATABASE_URL) || process.env["DB_SSL"] === "off" || /sslmode=disable/.test(DATABASE_URL);
-const mkPool = ssl => new pg.Pool({ connectionString: DATABASE_URL, ssl: ssl ? { rejectUnauthorized: false } : false, connectionTimeoutMillis: 15000 });
+const mkPool = ssl => new pg.Pool({ connectionString: DATABASE_URL, ssl: ssl ? { rejectUnauthorized: false } : false, connectionTimeoutMillis: 15000, statement_timeout: 120000, query_timeout: 125000 });
 let pool = mkPool(!sslOff);
 const q = (t, p) => pool.query(t, p).then(r => r.rows);
 const E = (s, m) => Object.assign(new Error(m), { status: s });
 const tx = async f => { const c = await pool.connect(); try { await c.query("begin"); const r = await f(c); await c.query("commit"); return r; } catch (e) { await c.query("rollback"); throw e; } finally { c.release(); } };
-const runSchema = async () => {
-await pool.query(SCHEMA["schema.sql"]);
-await pool.query(SCHEMA["schema_v2.sql"]);
-await pool.query(SCHEMA["schema_v3.sql"]);
-await pool.query("alter table listings add column if not exists after_msg text");
-await pool.query(SCHEMA["schema_v4.sql"]);
-await pool.query(SCHEMA["schema_v5.sql"]);
-await pool.query(SCHEMA["schema_v6.sql"]);
-await pool.query(SCHEMA["schema_v7.sql"]);
-await pool.query(SCHEMA["schema_v8.sql"]);
-await pool.query(SCHEMA["schema_v9.sql"]);
-await pool.query(SCHEMA["schema_v10.sql"]);
-await pool.query(SCHEMA["schema_v11.sql"]);
-await pool.query(SCHEMA["schema_v12.sql"]);
-await pool.query(SCHEMA["schema_v13.sql"]);
-await pool.query(SCHEMA["schema_v14.sql"]);
-await pool.query(SCHEMA["schema_v15.sql"]);
-await pool.query(SCHEMA["schema_v16.sql"]);
-await pool.query(SCHEMA["schema_v17.sql"]);
-await pool.query(SCHEMA["schema_v18.sql"]);
-await pool.query(SCHEMA["schema_v19.sql"]);
-await pool.query(SCHEMA["schema_v20.sql"]);
+const step = async (name, sql) => { const t0 = Date.now(); globalThis.__boot = "миграция " + name; console.log("[db] " + name + "…"); await pool.query(sql); console.log("[db] " + name + " ok " + (Date.now() - t0) + " мс"); };
+// Первый владелец без командной строки: задайте OWNER_EMAIL, зарегистрируйтесь с этим email, и аккаунт станет владельцем.
+// Работает только пока в базе нет ни одного владельца (после выдачи переменную лучше удалить).
+const grantOwner = async email => {
+  const o = String(process.env["OWNER_EMAIL"] || "").trim().toLowerCase(); if (!o || o !== String(email || "").trim().toLowerCase()) return false;
+  const r = await pool.query("update users set role='owner' where email=$1 and not exists(select 1 from users where role='owner') returning id", [o]); return r.rowCount > 0;
 };
-try { await runSchema(); }
+const runSchema = async () => {
+  globalThis.__boot = "подключение к базе данных"; console.log("[db] подключение…"); await pool.query("select 1"); console.log("[db] подключено");
+await step("schema.sql", SCHEMA["schema.sql"]);
+await step("schema_v2.sql", SCHEMA["schema_v2.sql"]);
+await step("schema_v3.sql", SCHEMA["schema_v3.sql"]);
+await pool.query("alter table listings add column if not exists after_msg text");
+await step("schema_v4.sql", SCHEMA["schema_v4.sql"]);
+await step("schema_v5.sql", SCHEMA["schema_v5.sql"]);
+await step("schema_v6.sql", SCHEMA["schema_v6.sql"]);
+await step("schema_v7.sql", SCHEMA["schema_v7.sql"]);
+await step("schema_v8.sql", SCHEMA["schema_v8.sql"]);
+await step("schema_v9.sql", SCHEMA["schema_v9.sql"]);
+await step("schema_v10.sql", SCHEMA["schema_v10.sql"]);
+await step("schema_v11.sql", SCHEMA["schema_v11.sql"]);
+await step("schema_v12.sql", SCHEMA["schema_v12.sql"]);
+await step("schema_v13.sql", SCHEMA["schema_v13.sql"]);
+await step("schema_v14.sql", SCHEMA["schema_v14.sql"]);
+await step("schema_v15.sql", SCHEMA["schema_v15.sql"]);
+await step("schema_v16.sql", SCHEMA["schema_v16.sql"]);
+await step("schema_v17.sql", SCHEMA["schema_v17.sql"]);
+await step("schema_v18.sql", SCHEMA["schema_v18.sql"]);
+await step("schema_v19.sql", SCHEMA["schema_v19.sql"]);
+await step("schema_v20.sql", SCHEMA["schema_v20.sql"]);
+};
+try { await runSchema(); if (await grantOwner(process.env["OWNER_EMAIL"])) console.log("[owner] роль owner выдана:", process.env["OWNER_EMAIL"]); globalThis.__boot = "запуск сервера"; }
 catch (e) {
   if (!sslOff && /does not support SSL/i.test(String(e.message))) { console.warn("[db] сервер БД без SSL, подключаюсь без SSL"); pool = mkPool(false); try { await runSchema(); } catch (e2) { throw new Error("База данных: " + (e2.code || "") + " " + e2.message); } }
   else throw new Error("База данных: " + (e.code || "") + " " + e.message);
@@ -74,7 +82,7 @@ const r3 = routes3(app, { q, pool, tx, E, wrap, need, pushUser, hooks });
 app.post("/api/auth/register", lim, antibot({ strictMail: true }), wrap(async (req, res) => {
   const { email, username, password } = req.body || {};
   if (!/^\S+@\S+\.\S+$/.test(email || "") || !/^[\w.-]{3,24}$/.test(username || "") || (password || "").length < 8) throw E(400, "invalid input");
-  try { const [u] = await q(`insert into users(email,username,password_hash) values($1,$2,$3) returning ${U}`, [email.toLowerCase(), username, await bcrypt.hash(password, 10)]); setCookie(res, u.id); res.json(u); }
+  try { const [u] = await q(`insert into users(email,username,password_hash) values($1,$2,$3) returning ${U}`, [email.toLowerCase(), username, await bcrypt.hash(password, 10)]); if (await grantOwner(email)) u.role = "owner"; setCookie(res, u.id); res.json(u); }
   catch (e) { if (e.code === "23505") throw E(409, "email or username taken"); throw e; }
 }));
 // 2FA: проверка кода приложения (с защитой от повторного использования) или резервного кода; не больше 5 ошибок за 15 минут на аккаунт
