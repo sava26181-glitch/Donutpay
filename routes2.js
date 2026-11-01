@@ -171,6 +171,7 @@ export default function routes2(app, { q, pool, tx, E, wrap, need, online, B, ho
     if (u.role !== role) await audit(u.id, "role_change", "user", u.id, { from: u.role, to: role, via: "ADMIN_TG" });
     return { id: u.id, username: u.username, role };
   };
+  hooks.syncAdminTg = async () => { for (const e of TGMAP) { try { await syncTg(e.id); } catch (er) { console.error("[telegram:admin] ADMIN_TG:", er.message); } } };
   setTimeout(() => { for (const e of TGMAP) syncTg(e.id).then(x => console.log("[telegram:admin] ADMIN_TG", e.id, "->", x ? (x.missing ? "аккаунт не найден: " + x.missing : x.username + " (" + x.role + ")") : "без привязки к аккаунту")).catch(er => console.error("[telegram:admin] ADMIN_TG:", er.message)); }, 4000);
   const abSay = (id, text) => tgCall(AB, "sendMessage", { chat_id: id, text });
   app.post("/api/admin-bot/link", need, staff(...ST), rateLimit({ windowMs: 3600e3, limit: 10 }), wrap(async (req, res) => {

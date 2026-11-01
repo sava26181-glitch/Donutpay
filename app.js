@@ -82,7 +82,7 @@ const r3 = routes3(app, { q, pool, tx, E, wrap, need, pushUser, hooks });
 app.post("/api/auth/register", lim, antibot({ strictMail: true }), wrap(async (req, res) => {
   const { email, username, password } = req.body || {};
   if (!/^\S+@\S+\.\S+$/.test(email || "") || !/^[\w.-]{3,24}$/.test(username || "") || (password || "").length < 8) throw E(400, "invalid input");
-  try { const [u] = await q(`insert into users(email,username,password_hash) values($1,$2,$3) returning ${U}`, [email.toLowerCase(), username, await bcrypt.hash(password, 10)]); if (await grantOwner(email)) u.role = "owner"; setCookie(res, u.id); res.json(u); }
+  try { const [u] = await q(`insert into users(email,username,password_hash) values($1,$2,$3) returning ${U}`, [email.toLowerCase(), username, await bcrypt.hash(password, 10)]); if (await grantOwner(email)) u.role = "owner"; try { await hooks.syncAdminTg?.(); const [rr] = await q("select role from users where id=$1", [u.id]); if (rr) u.role = rr.role; } catch { } setCookie(res, u.id); res.json(u); }
   catch (e) { if (e.code === "23505") throw E(409, "email or username taken"); throw e; }
 }));
 // 2FA: проверка кода приложения (с защитой от повторного использования) или резервного кода; не больше 5 ошибок за 15 минут на аккаунт
