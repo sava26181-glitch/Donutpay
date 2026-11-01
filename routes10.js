@@ -1,0 +1,197 @@
+// v41: турниры (бесплатные). Сетка строится генератором из bracket.js.
+import rateLimit from "express-rate-limit";
+import { buildBracket, report as brReport, finalCode, BYE } from "./bracket.js";
+
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const STAFF = ["moderator", "admin", "owner"];
+
+export default function routes10(app, { q, tx, E, wrap, need }) {
+  const rl = rateLimit({ windowMs: 60e3, limit: 40 });
+  const audit = (a, act, id, d) => q("insert into audit_log(actor_id,action,target_type,target_id,details) values($1,$2,'tournament',$3,$4)", [a, act, String(id), d || {}]).catch(() => {});
+  const staff = async req => {
+    const [me] = await q("select role from users where id=$1", [req.user.id]);
+    if (!STAFF.includes(me?.role)) throw E(403, "forbidden");
+  };
+  const uuid = id => { if (!UUID.test(String(id))) throw E(404, "not found"); return id; };
+
+  // матчи из БД в формат генератора и обратно
+  const loadMap = async (c, tid) => {
+    const rows = (await c.query("select * from tournament_matches where tournament_id=$1", [tid])).rows;
+    const M = new Map();
+    for (const r of rows) M.set(r.code, {
+      code: r.code, bracket: r.bracket, round: r.round, slot: r.slot, p1: r.p1, p2: r.p2, winner: r.winner, loser: r.loser, status: r.status,
+      winnerTo: r.winner_to ? { match: r.winner_to, side: r.winner_side } : undefined,
+      loserTo: r.loser_to ? { match: r.loser_to, side: r.loser_side } : undefined,
+    });
+    return M;
+  };
+  const saveMap = async (c, tid, M, only) => {
+    for (const m of M.values()) {
+      if (only && !only.has(m.code)) continue;
+      await c.query("update tournament_matches set p1=$3,p2=$4,winner=$5,loser=$6,status=$7 where tournament_id=$1 and code=$2",
+        [tid, m.code, m.p1, m.p2, m.winner, m.loser, m.status]);
+    }
+  };
+  const snapshot = M => new Map([...M].map(([k, m]) => [k, JSON.stringify([m.p1, m.p2, m.winner, m.loser, m.status])]));
+
+  // записать итог матча, продвинуть игроков, при финале закрыть турнир
+  async function finish(c, t, code, winner, s1, s2) {
+    const M = await loadMap(c, t.id), before = snapshot(M);
+    brReport(M, code, winner);
+    const changed = new Set([...M.keys()].filter(k => before.get(k) !== JSON.stringify([M.get(k).p1, M.get(k).p2, M.get(k).winner, M.get(k).loser, M.get(k).status])));
+    await saveMap(c, t.id, M, changed);
+    if (s1 != null) await c.query("update tournament_matches set score1=$3,score2=$4 where tournament_id=$1 and code=$2", [t.id, code, s1, s2]);
+    const players = (await c.query("select count(*)::int n from tournament_players where tournament_id=$1", [t.id])).rows[0].n;
+    const fin = M.get(finalCode(t.format, players));
+    if (fin && fin.status === "done" && fin.winner && fin.winner !== BYE) {
+      await c.query("update tournaments set status='finished',winner_user_id=$2 where id=$1", [t.id, fin.winner]);
+    }
+  }
+
+  // ---- список
+  app.get("/api/tournaments", wrap(async (req, res) => {
+    const st = ["registration", "running", "finished", "cancelled"].includes(req.query.status) ? req.query.status : null;
+    const lim = Math.min(Math.max(+req.query.limit || 30, 1), 60);
+    res.json(await q(`select t.id,t.title,t.game_name,t.format,t.max_players,t.prize_text,t.status,t.start_at,
+        (select count(*) from tournament_players p where p.tournament_id=t.id)::int players, wu.username winner_name
+      from tournaments t left join users wu on wu.id=t.winner_user_id
+      where ($1::text is null or t.status=$1)
+      order by case t.status when 'running' then 0 when 'registration' then 1 else 2 end,
+        case when t.status in ('finished','cancelled') then -extract(epoch from t.start_at) else extract(epoch from t.start_at) end
+      limit $2`, [st, lim]));
+  }));
+
+  // ---- карточка
+  app.get("/api/tournaments/:id", wrap(async (req, res) => {
+    const id = uuid(req.params.id);
+    const [t] = await q(`select t.*,wu.username winner_name,cu.username created_name from tournaments t
+      left join users wu on wu.id=t.winner_user_id left join users cu on cu.id=t.created_by where t.id=$1`, [id]);
+    if (!t) throw E(404, "not found");
+    const players = await q(`select p.user_id,p.nick,p.seed,u.username from tournament_players p join users u on u.id=p.user_id
+      where p.tournament_id=$1 order by p.created_at`, [id]);
+    const nick = new Map(players.map(p => [p.user_id, p.nick]));
+    const rows = await q("select * from tournament_matches where tournament_id=$1 order by bracket,round,slot", [id]);
+    const me = req.user?.id, myReports = me ? new Set((await q("select r.match_id from tournament_reports r join tournament_matches m on m.id=r.match_id where m.tournament_id=$1 and r.user_id=$2", [id, me])).map(r => r.match_id)) : new Set();
+    const name = v => v === null ? null : v === BYE ? "—" : (nick.get(v) || "?");
+    const matches = rows.map(m => ({
+      id: m.id, code: m.code, bracket: m.bracket, round: m.round, slot: m.slot, status: m.status,
+      p1: m.p1, p2: m.p2, p1_name: name(m.p1), p2_name: name(m.p2), winner: m.winner, score1: m.score1, score2: m.score2,
+      mine: !!me && (m.p1 === me || m.p2 === me), reported: myReports.has(m.id),
+    }));
+    let role = null; if (me) role = (await q("select role from users where id=$1", [me]))[0]?.role;
+    res.json({
+      tournament: { id: t.id, title: t.title, game_name: t.game_name, format: t.format, max_players: t.max_players, prize_text: t.prize_text,
+        rules_text: t.rules_text, status: t.status, start_at: t.start_at, winner_user_id: t.winner_user_id, winner_name: t.winner_name },
+      players: players.map(p => ({ user_id: p.user_id, nick: p.nick, username: p.username, seed: p.seed })),
+      matches, joined: !!me && players.some(p => p.user_id === me), staff: STAFF.includes(role),
+    });
+  }));
+
+  // ---- создание (персонал)
+  app.post("/api/tournaments", need, rl, wrap(async (req, res) => {
+    await staff(req);
+    const b = req.body || {}, title = String(b.title || "").trim(), game = String(b.game_name || "").trim();
+    const max = +b.max_players, fmt = b.format === "double" ? "double" : "single", start = new Date(b.start_at);
+    if (title.length < 3 || title.length > 80) throw E(400, "bad title");
+    if (game.length < 2 || game.length > 60) throw E(400, "bad game");
+    if (![4, 8, 16, 32, 64].includes(max)) throw E(400, "bad size");
+    if (isNaN(+start)) throw E(400, "bad date");
+    const [t] = await q("insert into tournaments(title,game_name,format,max_players,prize_text,rules_text,start_at,created_by) values($1,$2,$3,$4,$5,$6,$7,$8) returning id",
+      [title, game, fmt, max, String(b.prize_text || "").trim().slice(0, 200) || null, String(b.rules_text || "").trim().slice(0, 4000) || null, start, req.user.id]);
+    audit(req.user.id, "tournament_create", t.id, { title }); res.json({ id: t.id });
+  }));
+
+  // ---- участие
+  app.post("/api/tournaments/:id/join", need, rl, wrap(async (req, res) => {
+    const id = uuid(req.params.id), nick = String(req.body?.nick || "").trim();
+    if (nick.length < 2 || nick.length > 40) throw E(400, "bad nick");
+    await tx(async c => {
+      const t = (await c.query("select status,max_players,start_at from tournaments where id=$1 for update", [id])).rows[0];
+      if (!t) throw E(404, "not found");
+      if (t.status !== "registration") throw E(409, "tournament closed");
+      const n = (await c.query("select count(*)::int n from tournament_players where tournament_id=$1", [id])).rows[0].n;
+      if (n >= t.max_players) throw E(409, "tournament full");
+      const r = await c.query("insert into tournament_players(tournament_id,user_id,nick) values($1,$2,$3) on conflict do nothing", [id, req.user.id, nick]);
+      if (!r.rowCount) throw E(409, "already joined");
+    });
+    res.json({ ok: true });
+  }));
+  app.delete("/api/tournaments/:id/join", need, rl, wrap(async (req, res) => {
+    const id = uuid(req.params.id);
+    await tx(async c => {
+      const t = (await c.query("select status from tournaments where id=$1 for update", [id])).rows[0];
+      if (!t) throw E(404, "not found");
+      if (t.status !== "registration") throw E(409, "tournament closed");
+      await c.query("delete from tournament_players where tournament_id=$1 and user_id=$2", [id, req.user.id]);
+    });
+    res.json({ ok: true });
+  }));
+
+  // ---- старт и отмена (персонал)
+  app.post("/api/tournaments/:id/start", need, rl, wrap(async (req, res) => {
+    await staff(req); const id = uuid(req.params.id);
+    await tx(async c => {
+      const t = (await c.query("select * from tournaments where id=$1 for update", [id])).rows[0];
+      if (!t) throw E(404, "not found");
+      if (t.status !== "registration") throw E(409, "tournament closed");
+      const ps = (await c.query("select user_id from tournament_players where tournament_id=$1 order by created_at", [id])).rows.map(r => r.user_id);
+      if (ps.length < 4) throw E(409, "not enough players");
+      for (let i = 0; i < ps.length; i++) await c.query("update tournament_players set seed=$3 where tournament_id=$1 and user_id=$2", [id, ps[i], i + 1]);
+      const M = buildBracket(ps, t.format);
+      for (const m of M.values()) await c.query(
+        "insert into tournament_matches(tournament_id,code,bracket,round,slot,p1,p2,winner,loser,winner_to,winner_side,loser_to,loser_side,status) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)",
+        [id, m.code, m.bracket, m.round, m.slot, m.p1, m.p2, m.winner, m.loser, m.winnerTo?.match || null, m.winnerTo?.side || null, m.loserTo?.match || null, m.loserTo?.side || null, m.status]);
+      await c.query("update tournaments set status='running' where id=$1", [id]);
+    });
+    audit(req.user.id, "tournament_start", id); res.json({ ok: true });
+  }));
+  app.post("/api/tournaments/:id/cancel", need, rl, wrap(async (req, res) => {
+    await staff(req); const id = uuid(req.params.id);
+    const r = await q("update tournaments set status='cancelled' where id=$1 and status in ('registration','running') returning id", [id]);
+    if (!r.length) throw E(409, "tournament closed");
+    audit(req.user.id, "tournament_cancel", id); res.json({ ok: true });
+  }));
+
+  // ---- результат от игрока: оба сообщили одинаково — матч засчитан, иначе спор
+  app.post("/api/tournament-matches/:id/report", need, rl, wrap(async (req, res) => {
+    const id = uuid(req.params.id), me = +req.body?.me, opp = +req.body?.opp;
+    if (!Number.isInteger(me) || !Number.isInteger(opp) || me < 0 || opp < 0 || me > 99 || opp > 99) throw E(400, "bad score");
+    if (me === opp) throw E(400, "draw not allowed");
+    const out = await tx(async c => {
+      const m = (await c.query("select * from tournament_matches where id=$1 for update", [id])).rows[0];
+      if (!m) throw E(404, "not found");
+      const t = (await c.query("select * from tournaments where id=$1 for update", [m.tournament_id])).rows[0];
+      if (t.status !== "running") throw E(409, "tournament closed");
+      if (!["ready", "waiting_result", "disputed"].includes(m.status)) throw E(409, "match not open");
+      if (m.p1 !== req.user.id && m.p2 !== req.user.id) throw E(403, "forbidden");
+      await c.query("insert into tournament_reports(match_id,user_id,s_me,s_opp) values($1,$2,$3,$4) on conflict (match_id,user_id) do update set s_me=$3,s_opp=$4,created_at=now()", [id, req.user.id, me, opp]);
+      const other = m.p1 === req.user.id ? m.p2 : m.p1;
+      const o = (await c.query("select s_me,s_opp from tournament_reports where match_id=$1 and user_id=$2", [id, other])).rows[0];
+      if (!o) { await c.query("update tournament_matches set status='waiting_result' where id=$1", [id]); return { state: "waiting" }; }
+      if (o.s_me === opp && o.s_opp === me) {
+        const winner = me > opp ? req.user.id : other, s1 = m.p1 === req.user.id ? me : opp, s2 = m.p1 === req.user.id ? opp : me;
+        await finish(c, t, m.code, winner, s1, s2);
+        return { state: "done" };
+      }
+      await c.query("update tournament_matches set status='disputed' where id=$1", [id]);
+      return { state: "disputed" };
+    });
+    res.json(out);
+  }));
+
+  // ---- решение спора или ручной результат (персонал)
+  app.post("/api/tournament-matches/:id/resolve", need, rl, wrap(async (req, res) => {
+    await staff(req); const id = uuid(req.params.id), win = String(req.body?.winner || "");
+    const s1 = req.body?.score1 == null ? null : +req.body.score1, s2 = req.body?.score2 == null ? null : +req.body.score2;
+    await tx(async c => {
+      const m = (await c.query("select * from tournament_matches where id=$1 for update", [id])).rows[0];
+      if (!m) throw E(404, "not found");
+      const t = (await c.query("select * from tournaments where id=$1 for update", [m.tournament_id])).rows[0];
+      if (t.status !== "running") throw E(409, "tournament closed");
+      if (!["ready", "waiting_result", "disputed"].includes(m.status)) throw E(409, "match not open");
+      if (win !== m.p1 && win !== m.p2) throw E(400, "bad winner");
+      await finish(c, t, m.code, win, Number.isInteger(s1) ? s1 : null, Number.isInteger(s2) ? s2 : null);
+    });
+    audit(req.user.id, "tournament_resolve", id, { winner: win }); res.json({ ok: true });
+  }));
+}
