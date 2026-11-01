@@ -53,8 +53,10 @@ export default function routes11(app, { q, tx, E, wrap, need }) {
     limit("u:" + req.user.id, 5, 36e5); limit("p:" + h, 3, 36e5);
     const r = await sb("/auth/v1/otp", { phone, create_user: true });
     if (!r.ok) {
-      console.error("[sms] supabase otp", r.status, r.j?.error_code || r.j?.code || r.j?.msg || r.j?.message || "");
-      throw E(r.status === 429 ? 429 : 502, r.status === 429 ? "sms too often" : "sms service error");
+      const why = String(r.j?.error_code || r.j?.msg || r.j?.message || r.j?.error_description || r.j?.error || "").slice(0, 80);
+      console.error("[sms] supabase otp", r.status, why);
+      if (r.status === 429) throw E(429, "sms too often");
+      throw E(502, "Не удалось отправить SMS. Ответ Supabase: " + r.status + (why ? " " + why : ""));
     }
     res.json({ ok: true });
   }));
