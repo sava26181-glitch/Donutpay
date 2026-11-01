@@ -34,7 +34,7 @@ window.cfMount = () => {
 const pwf = (id, lbl, ac, extra) => `<div class="fld"><label for="${id}">${lbl}</label><div class="pwr"><input id="${id}" type="password" autocomplete="${ac}" ${extra || ""}><button type="button" class="eye" aria-label="Показать пароль" onclick="eyeTog('${id}')">${IC9.eye}</button></div></div>`;
 window.auth = function (mode) {
   const r = mode === "register";
-  return `<div class="au"><div class="au-hd"><i class="kico"></i><h1>${r ? "Регистрация" : "Вход"}</h1></div>
+  return `<div class="au"><div class="au-hd"><h1>${r ? "Регистрация" : "Вход"}</h1></div>
   <div class="fld"><label for="em">Email</label><input id="em" type="email" autocomplete="email" inputmode="email" autocapitalize="off" placeholder="name@example.com"></div>
   ${r ? '<div class="fld"><label for="un">Имя пользователя</label><input id="un" autocomplete="username" autocapitalize="off" maxlength="24" placeholder="3–24 символа"></div>' : ""}
   ${pwf("pw", r ? "Пароль" : "Пароль", r ? "new-password" : "current-password", `onkeydown="if(event.key==='Enter')doAuth('${mode}')" ${r ? 'placeholder="Минимум 8 символов"' : ""}`)}
@@ -49,7 +49,7 @@ window.resetPage = async function () {
   const via = info.telegram && info.email ? "в Telegram или на почту" : info.telegram ? "в Telegram" : "на почту";
   const lead = !can ? "Автоматическая отправка кодов сейчас недоступна. Напишите в поддержку: сотрудник выдаст одноразовый код после проверки."
     : "Мы пришлём одноразовый код " + via + (info.telegram ? ". Для Telegram он должен быть привязан в «Настройках» заранее" : "") + ". Код действует 15 минут.";
-  return `<div class="au"><div class="au-hd"><i class="kico"></i><h1>Сброс пароля</h1></div><p class="au-s">${lead}</p>
+  return `<div class="au"><div class="au-hd"><h1>Сброс пароля</h1></div><p class="au-s">${lead}</p>
   <div class="au-st"><span class="n">1.</span>Получите код<small>Введите email вашего аккаунта</small></div>
   <div class="fld"><label for="rem">Email</label><input id="rem" type="email" autocomplete="email" inputmode="email" autocapitalize="off" placeholder="name@example.com"></div>
   ${can ? HP9 + CF9 + `<button class="au-btn sec" onclick="resetReq()">Отправить код</button>` : ""}
