@@ -5,8 +5,8 @@ import http from "node:http";
 import crypto from "node:crypto";
 import { sendMail, mailErr } from "./mailer.js";
 
-const SECRET = process.env.RELAY_SECRET || "";
-const PORT = +process.env.PORT || 8787;
+const SECRET = process.env["RELAY_SECRET"] || "";
+const PORT = +process.env["PORT"] || 8787;
 if (SECRET.length < 16) { console.error("Задайте RELAY_SECRET (минимум 16 символов)"); process.exit(1) }
 for (const k of ["SMTP_HOST", "SMTP_USER", "SMTP_PASS", "MAIL_FROM"]) if (!process.env[k]) { console.error("Не задано " + k); process.exit(1) }
 // чтобы mailer.js в relay использовал только SMTP
