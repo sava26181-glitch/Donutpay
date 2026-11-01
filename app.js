@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import express from "express"; import helmet from "helmet"; import cookieParser from "cookie-parser";
 import SCHEMA from "./schema_bundle.js"; import rateLimit from "express-rate-limit"; import { shieldEarly, shieldRules, antibot } from "./shield.js"; import bcrypt from "bcryptjs"; import jwt from "jsonwebtoken";
-import { verifyTotp, hashBackup } from "./totp.js"; import routes9 from "./routes9.js"; import routes10 from "./routes10.js";
+import { verifyTotp, hashBackup } from "./totp.js"; import routes9 from "./routes9.js"; import routes10 from "./routes10.js"; import routes11 from "./routes11.js";
 import pg from "pg"; import routes2 from "./routes2.js"; import routes3 from "./routes3.js"; import routes7 from "./routes7.js";
 import wf from "./wordfilter.js"; import routes8 from "./routes8.js"; import routes6 from "./routes6.js"; import sysmsg from "./sysmsg.js"; import routes4 from "./routes4.js"; import routes5 from "./routes5.js"; import { makeBadges } from "./badges.js"; import fs from "fs"; import path from "path"; import { fileURLToPath } from "url";
 const dir = path.dirname(fileURLToPath(import.meta.url));
@@ -47,6 +47,7 @@ await step("schema_v18.sql", SCHEMA["schema_v18.sql"]);
 await step("schema_v19.sql", SCHEMA["schema_v19.sql"]);
 await step("schema_v20.sql", SCHEMA["schema_v20.sql"]);
 await step("schema_v21.sql", SCHEMA["schema_v21.sql"]);
+await step("schema_v22.sql", SCHEMA["schema_v22.sql"]);
 };
 try { await runSchema(); if (await grantOwner(process.env["OWNER_EMAIL"])) console.log("[owner] роль owner выдана:", process.env["OWNER_EMAIL"]); globalThis.__boot = "запуск сервера"; }
 catch (e) {
@@ -133,6 +134,7 @@ routes6(app, { q, pool, tx, E, wrap, need, hooks, pushUser });
 routes7(app, { q, pool, tx, E, wrap, need, hooks, pushUser });
 routes9(app, { q, E, wrap, need, twofaCheck });
 routes10(app, { q, tx, E, wrap, need });
+routes11(app, { q, tx, E, wrap, need });
 routes8(app, { q, pool, tx, E, wrap, need, hooks, pushUser, online: uid => online(uid), notifyStaff: t => r2.notifyStaff?.(t) });
 app.get("/api/listings", wrap(async (req, res) => {
   const { game, category, min, max, q: s, seller, sort, offset } = req.query, w = ["l.status='active'"], p = [];
