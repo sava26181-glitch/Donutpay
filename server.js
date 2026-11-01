@@ -6,12 +6,19 @@ import pg from "pg"; import routes2 from "./routes2.js"; import routes3 from "./
 import wf from "./wordfilter.js"; import routes8 from "./routes8.js"; import routes6 from "./routes6.js"; import sysmsg from "./sysmsg.js"; import routes4 from "./routes4.js"; import routes5 from "./routes5.js"; import { makeBadges } from "./badges.js"; import fs from "fs"; import path from "path"; import { fileURLToPath } from "url";
 const dir = path.dirname(fileURLToPath(import.meta.url));
 const { DATABASE_URL, JWT_SECRET, NODE_ENV } = process.env;
-if (!DATABASE_URL || !JWT_SECRET) { console.error("DATABASE_URL and JWT_SECRET are required"); process.exit(1); }
+// Если запуск не удался (нет переменных, база недоступна), процесс не падает: порт слушается и показывает причину, чтобы вместо 502 было видно ошибку (и в логах).
+import http from "node:http";
+const diag = (msg) => { console.error("[startup] " + msg); return new Promise(() => { http.createServer((req, res) => { res.writeHead(503, { "Content-Type": "text/plain; charset=utf-8", "Retry-After": "30" }); res.end("DonutPay: ошибка запуска\n" + msg.replace(/\/\/[^@\s]*@/g, "//***@")); }).listen(+process.env["PORT"] || 3000, "0.0.0.0"); }); };
+process.on("unhandledRejection", e => console.error("[unhandledRejection]", e)); process.on("uncaughtException", e => console.error("[uncaughtException]", e));
+if (!DATABASE_URL || !JWT_SECRET) await diag("Не заданы переменные окружения: " + [!DATABASE_URL && "DATABASE_URL", !JWT_SECRET && "JWT_SECRET"].filter(Boolean).join(", "));
 const prod = NODE_ENV === "production";
-const pool = new pg.Pool({ connectionString: DATABASE_URL, ssl: /localhost|127\.0\.0\.1/.test(DATABASE_URL) ? false : { rejectUnauthorized: false } });
+const sslOff = /localhost|127\.0\.0\.1/.test(DATABASE_URL) || process.env["DB_SSL"] === "off" || /sslmode=disable/.test(DATABASE_URL);
+const mkPool = ssl => new pg.Pool({ connectionString: DATABASE_URL, ssl: ssl ? { rejectUnauthorized: false } : false, connectionTimeoutMillis: 15000 });
+let pool = mkPool(!sslOff);
 const q = (t, p) => pool.query(t, p).then(r => r.rows);
 const E = (s, m) => Object.assign(new Error(m), { status: s });
 const tx = async f => { const c = await pool.connect(); try { await c.query("begin"); const r = await f(c); await c.query("commit"); return r; } catch (e) { await c.query("rollback"); throw e; } finally { c.release(); } };
+const runSchema = async () => {
 await pool.query(SCHEMA["schema.sql"]);
 await pool.query(SCHEMA["schema_v2.sql"]);
 await pool.query(SCHEMA["schema_v3.sql"]);
@@ -33,6 +40,12 @@ await pool.query(SCHEMA["schema_v17.sql"]);
 await pool.query(SCHEMA["schema_v18.sql"]);
 await pool.query(SCHEMA["schema_v19.sql"]);
 await pool.query(SCHEMA["schema_v20.sql"]);
+};
+try { await runSchema(); }
+catch (e) {
+  if (!sslOff && /does not support SSL/i.test(String(e.message))) { console.warn("[db] сервер БД без SSL, подключаюсь без SSL"); pool = mkPool(false); try { await runSchema(); } catch (e2) { await diag("База данных: " + (e2.code || "") + " " + e2.message); } }
+  else await diag("База данных: " + (e.code || "") + " " + e.message);
+}
 
 const app = express(); app.set("trust proxy", 1); app.use(shieldEarly());
 app.use(helmet({ contentSecurityPolicy: { directives: { defaultSrc: ["'self'"], styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"], fontSrc: ["'self'", "data:", "https://fonts.gstatic.com"], mediaSrc: ["'self'", "blob:", "data:", "https://*.supabase.co"], scriptSrc: ["'self'", "'unsafe-inline'", "https://challenges.cloudflare.com"], scriptSrcAttr: ["'unsafe-inline'"], imgSrc: ["'self'", "data:", "blob:", "https://*.supabase.co"], connectSrc: ["'self'", "https://challenges.cloudflare.com"], frameSrc: ["https://challenges.cloudflare.com"] } } }));
