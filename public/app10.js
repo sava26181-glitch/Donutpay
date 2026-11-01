@@ -1,0 +1,127 @@
+// v41: турниры. Блок на главной под «Дуэли магазинов» и «Кодекс продавца» + страницы #/tournaments
+(() => {
+IC4.trophy = "M19 5h-2V3H7v2H5c-1.1 0-2 .9-2 2v1c0 2.55 1.92 4.63 4.39 4.94.63 1.5 1.98 2.63 3.61 2.96V19H7v2h10v-2h-4v-3.1c1.63-.33 2.98-1.46 3.61-2.96C19.08 12.63 21 10.55 21 8V7c0-1.1-.9-2-2-2zM5 8V7h2v3.82C5.84 10.4 5 9.3 5 8zm14 0c0 1.3-.84 2.4-2 2.82V7h2v1z";
+Object.assign(ERR, {
+  "tournament closed": "Регистрация закрыта или турнир уже идёт",
+  "tournament full": "В турнире нет свободных мест",
+  "already joined": "Вы уже записаны на этот турнир",
+  "not enough players": "Для старта нужно минимум 4 участника",
+  "bad nick": "Ник в игре: от 2 до 40 символов",
+  "bad title": "Название: от 3 до 80 символов",
+  "bad game": "Укажите игру",
+  "bad size": "Выберите число мест",
+  "bad date": "Укажите дату и время начала",
+  "bad score": "Очки: целые числа от 0 до 99",
+  "draw not allowed": "Ничья невозможна, укажите победителя",
+  "match not open": "Этот матч сейчас закрыт для ввода результата",
+  "bad winner": "Победитель должен быть участником матча",
+});
+const tStaff = () => !!ME && ["moderator", "admin", "owner"].includes(ME.role);
+const tDate = d => new Date(d).toLocaleString("ru-RU", { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" });
+const TST = { registration: ["Набор открыт", "reg"], running: ["Идёт", "run"], finished: ["Завершён", "fin"], cancelled: ["Отменён", "can"] };
+const tPill = s => `<span class="tpl ${TST[s][1]}">${TST[s][0]}</span>`;
+const tFmt = f => f === "double" ? "Double elimination" : "Single elimination";
+const tCard = t => `<a class="tcd" onclick="go('/tournaments/${t.id}')"><div class="tch"><b>${esc(t.title)}</b>${tPill(t.status)}</div><div class="m">${esc(t.game_name)} · ${tFmt(t.format)}</div><div class="tcf"><span>${t.players} из ${t.max_players} игроков</span><span>${tDate(t.start_at)}</span></div>${t.prize_text ? `<div class="tpz">${ic4("trophy", 14)}<span>${esc(t.prize_text)}</span></div>` : ""}${t.status === "finished" && t.winner_name ? `<div class="m">Победитель: <b>${esc(t.winner_name)}</b></div>` : ""}</a>`;
+
+// ---- главная: блок под плитками «Дуэли магазинов» и «Кодекс продавца»
+{
+  const _home = home;
+  window.home = async function () {
+    const h = await _home();
+    let ts = []; try { ts = await api("/tournaments?limit=8") } catch { }
+    const live = ts.filter(t => t.status === "running" || t.status === "registration").slice(0, 3);
+    const block = `<div class="tqh"><div class="row bet"><h2 class="h2i">${ic4("trophy", 20)}Турниры</h2><a class="lk" onclick="go('/tournaments')">Все турниры</a></div>${live.length ? `<div class="tgrid">${live.map(tCard).join("")}</div>` : `<div class="card m">Ближайшие турниры появятся здесь. Загляните позже.</div>`}</div>`;
+    const key = '<div class="row bet" style="margin-top:var(--gap)">';
+    return h.includes(key) ? h.replace(key, block + key) : h + block;
+  };
+}
+
+const TRULES = `<details class="card trl"><summary><b>Правила турниров</b></summary><ol class="m" style="margin:10px 0 0;padding-left:20px;line-height:1.6"><li>Турниры бесплатные. Взносов и денежных призов через сайт пока нет, приз (если он есть) выдаёт организатор вручную.</li><li>Участвовать могут зарегистрированные пользователи, один человек играет с одного аккаунта.</li><li>Укажите свой ник в игре точно: по нему соперник найдёт вас.</li><li>Сетка строится при старте турнира. Места определяются порядком записи, лишние места в первом раунде получают первые записавшиеся.</li><li>После матча оба игрока вводят счёт. Если счёт совпал, матч засчитан, победитель идёт дальше. Если нет, матч уходит в спор, и результат определяет администратор.</li><li>Ничьих нет: счёт должен определять победителя.</li><li>Читы, договорные матчи и игра с чужого аккаунта приводят к снятию с турнира.</li></ol></details>`;
+
+window.tournamentsPage = async function (id) { return id ? tView(id) : tList() };
+
+async function tList() {
+  const ts = await api("/tournaments?limit=60"), by = s => ts.filter(t => t.status === s);
+  const sec = (h, a, e) => `<h3>${h}</h3>${a.length ? `<div class="tgrid">${a.map(tCard).join("")}</div>` : empty(e)}`;
+  return `<div class="row bet"><h2 class="h2i">${ic4("trophy", 20)}Турниры</h2>${tStaff() ? '<button class="btn sm pri" onclick="tForm()">Создать турнир</button>' : ""}</div><p class="m" style="margin-top:0">Турниры по сетке на выбывание. Записывайтесь, играйте матчи и вводите результат: победитель проходит дальше.</p>${TRULES}${sec("Идут сейчас", by("running"), "Сейчас нет идущих турниров.")}${sec("Набор открыт", by("registration"), "Открытых турниров пока нет.")}${sec("Завершённые", by("finished"), "Завершённых турниров пока нет.")}`;
+}
+
+const T_OPEN = ["ready", "waiting_result", "disputed"];
+function tRoundName(br, r, max) {
+  if (br === "GF") return "Финал";
+  if (br === "L") return "Раунд " + r;
+  const left = max - r; return left === 0 ? "Финал" : left === 1 ? "Полуфинал" : left === 2 ? "Четвертьфинал" : "Раунд " + r;
+}
+function tMatch(m, t) {
+  window._tm = window._tm || {}; window._tm[m.id] = m;
+  const row = (n, uid, sc) => `<div class="tmr${m.winner && m.winner === uid ? " win" : ""}${ME && uid === ME.id ? " me" : ""}"><span>${n == null ? "ожидает" : esc(n)}</span><b>${sc == null ? "" : sc}</b></div>`;
+  let foot = "";
+  if (t.status === "running" && T_OPEN.includes(m.status) && m.p1 && m.p2) {
+    if (m.mine) foot = m.status === "disputed" ? `<div class="tmf m">Результаты не совпали, решает администратор</div>${m.reported ? "" : `<button class="btn sm" onclick="tReport('${m.id}')">Изменить результат</button>`}`
+      : m.reported ? `<div class="tmf m">Результат отправлен, ждём соперника</div>` : `<button class="btn sm pri" onclick="tReport('${m.id}')">Ввести результат</button>`;
+    else if (m.status === "disputed") foot = `<div class="tmf m">Спор, решает администратор</div>`;
+    if (tStaff()) foot += `<button class="btn sm" style="margin-top:6px" onclick="tResolve('${m.id}')">Решить как админ</button>`;
+  }
+  return `<div class="tm${m.mine ? " mine" : ""}">${row(m.p1_name, m.p1, m.score1)}${row(m.p2_name, m.p2, m.score2)}${foot}</div>`;
+}
+function tBracket(d) {
+  const t = d.tournament; if (!d.matches.length) return "";
+  const groups = ["W", "L", "GF"].map(br => {
+    const ms = d.matches.filter(m => m.bracket === br); if (!ms.length) return "";
+    const maxR = Math.max(...ms.map(m => m.round)), cols = [];
+    for (let r = 1; r <= maxR; r++) {
+      const rm = ms.filter(m => m.round === r).sort((a, b) => a.slot - b.slot);
+      cols.push(`<div class="tcol"><div class="tcn">${tRoundName(br, r, maxR)}</div><div class="tcm">${rm.map(m => tMatch(m, t)).join("")}</div></div>`);
+    }
+    const title = br === "W" ? (t.format === "double" ? "Верхняя сетка" : "Сетка") : br === "L" ? "Нижняя сетка" : "Финал турнира";
+    return `<h3>${title}</h3><div class="tbr">${cols.join("")}</div>`;
+  }).join("");
+  return groups;
+}
+async function tView(id) {
+  const d = await api("/tournaments/" + id), t = d.tournament;
+  let ctl = "";
+  if (t.status === "registration") {
+    if (!ME) ctl = `<button class="btn pri" onclick="NEXT='/tournaments/${id}';go('/login')">Войдите, чтобы участвовать</button>`;
+    else if (d.joined) ctl = `<button class="btn" onclick="tLeave('${id}')">Выйти из турнира</button>`;
+    else if (d.players.length >= t.max_players) ctl = `<span class="m">Мест нет</span>`;
+    else ctl = `<button class="btn pri" onclick="tJoin('${id}')">Участвовать</button>`;
+  }
+  const adm = !d.staff ? "" : `<div class="row" style="gap:8px;flex-wrap:wrap;margin-top:10px">${t.status === "registration" ? `<button class="btn sm pri" onclick="tStart('${id}')">Начать турнир</button>` : ""}${["registration", "running"].includes(t.status) ? `<button class="btn sm" onclick="tCancel('${id}')">Отменить турнир</button>` : ""}</div>${t.status === "registration" && d.players.length < 4 ? '<div class="m"><small>Для старта нужно минимум 4 участника.</small></div>' : ""}`;
+  const win = t.status === "finished" && t.winner_name ? `<div class="card twin">${ic4("trophy", 20)}<div><b>Победитель: ${esc((d.players.find(p => p.user_id === t.winner_user_id) || {}).nick || t.winner_name)}</b><div class="m">Аккаунт: ${esc(t.winner_name)}</div></div></div>` : "";
+  const pl = d.players.length ? `<div class="tpls">${d.players.map(p => `<span class="tpc${ME && p.user_id === ME.id ? " me" : ""}" title="${esc(p.username)}">${esc(p.nick)}</span>`).join("")}</div>` : `<div class="m">Пока никто не записался.</div>`;
+  return `<a class="lk" onclick="go('/tournaments')">← Все турниры</a><div class="card tin"><div class="tch"><h2 style="margin:0">${esc(t.title)}</h2>${tPill(t.status)}</div><div class="m">${esc(t.game_name)} · ${tFmt(t.format)} · начало ${tDate(t.start_at)}</div>${t.prize_text ? `<div class="tpz">${ic4("trophy", 14)}<span>${esc(t.prize_text)}</span></div>` : ""}${t.rules_text ? `<p style="margin:10px 0 0;white-space:pre-wrap">${esc(t.rules_text)}</p>` : ""}<div class="row" style="gap:10px;align-items:center;margin-top:12px;flex-wrap:wrap">${ctl}<span class="m">${d.players.length} из ${t.max_players} игроков</span></div>${adm}</div>${win}<h3>Участники</h3>${pl}${tBracket(d)}${TRULES}`;
+}
+
+const tJoin = id => mdl(`<h3 style="margin-top:0">Участие в турнире</h3><label>Ваш ник в игре</label><input id="tnk" maxlength="40" autocomplete="off"><div class="hint">Соперник будет искать вас по этому нику.</div><button class="btn pri" style="margin-top:10px;width:100%" onclick="tJoinGo('${id}')">Записаться</button>`);
+const tJoinGo = act(async id => { await api(`/tournaments/${id}/join`, { method: "POST", body: { nick: $("#tnk").value } }); $("#md")?.remove(); toast("Вы записаны"); route() });
+const tLeave = act(async id => { await api(`/tournaments/${id}/join`, { method: "DELETE" }); toast("Вы вышли из турнира"); route() });
+const tStart = act(async id => { await api(`/tournaments/${id}/start`, { method: "POST" }); toast("Турнир начался, сетка построена"); route() });
+const tCancel = act(async id => { if (!confirm("Отменить турнир?")) return; await api(`/tournaments/${id}/cancel`, { method: "POST" }); toast("Турнир отменён"); route() });
+function tReport(mid) {
+  const m = window._tm[mid], me = m.p1 === ME.id ? m.p1_name : m.p2_name, op = m.p1 === ME.id ? m.p2_name : m.p1_name;
+  mdl(`<h3 style="margin-top:0">Результат матча</h3><p class="m" style="margin-top:0">${esc(me)} против ${esc(op)}. Введите счёт так, как он был в игре. Результат засчитается, когда его подтвердит соперник.</p><label>Ваши очки</label><input id="tsm" type="number" min="0" max="99" inputmode="numeric"><label>Очки соперника (${esc(op)})</label><input id="tso" type="number" min="0" max="99" inputmode="numeric"><button class="btn pri" style="margin-top:10px;width:100%" onclick="tReportGo('${mid}')">Отправить</button>`);
+}
+const tReportGo = act(async mid => {
+  const r = await api(`/tournament-matches/${mid}/report`, { method: "POST", body: { me: $("#tsm").value, opp: $("#tso").value } });
+  $("#md")?.remove(); toast(r.state === "done" ? "Матч засчитан" : r.state === "disputed" ? "Счёт не совпал, решит администратор" : "Результат отправлен, ждём соперника"); route();
+});
+function tResolve(mid) {
+  const m = window._tm[mid];
+  mdl(`<h3 style="margin-top:0">Решение по матчу</h3><p class="m" style="margin-top:0">Выберите победителя. Решение записывается в журнал действий.</p><div style="display:grid;gap:8px"><button class="btn pri" onclick="tResolveGo('${mid}','${m.p1}')">Победил ${esc(m.p1_name)}</button><button class="btn pri" onclick="tResolveGo('${mid}','${m.p2}')">Победил ${esc(m.p2_name)}</button></div>`);
+}
+const tResolveGo = act(async (mid, w) => { await api(`/tournament-matches/${mid}/resolve`, { method: "POST", body: { winner: w } }); $("#md")?.remove(); toast("Результат записан"); route() });
+async function tForm() {
+  const gs = await api("/games").catch(() => []), d = new Date(Date.now() + 864e5); d.setMinutes(0, 0, 0);
+  const loc = new Date(d - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 16);
+  mdl(`<h3 style="margin-top:0">Новый турнир</h3><label>Название</label><input id="tt" maxlength="80"><label>Игра</label><input id="tg" list="tgl" maxlength="60" placeholder="Начните вводить название"><datalist id="tgl">${gs.map(g => `<option value="${esc(g.name)}">`).join("")}</datalist><label>Формат</label><select id="tf"><option value="single">Single elimination (проиграл — выбыл)</option><option value="double">Double elimination (два поражения)</option></select><label>Число мест</label><select id="ts">${[4, 8, 16, 32, 64].map(n => `<option ${n === 8 ? "selected" : ""}>${n}</option>`).join("")}</select><label>Начало</label><input id="td" type="datetime-local" value="${loc}"><label>Приз (по желанию)</label><input id="tp" maxlength="200" placeholder="Например, значок или подарок от организатора"><label>Условия (по желанию)</label><textarea id="tr" rows="3" maxlength="4000"></textarea><button class="btn pri" style="margin-top:10px;width:100%" onclick="tFormGo(this)">Создать</button>`);
+}
+const tFormGo = act(async btn => {
+  btn.disabled = true;
+  try {
+    const r = await api("/tournaments", { method: "POST", body: { title: $("#tt").value, game_name: $("#tg").value, format: $("#tf").value, max_players: +$("#ts").value, start_at: new Date($("#td").value).toISOString(), prize_text: $("#tp").value, rules_text: $("#tr").value } });
+    $("#md")?.remove(); toast("Турнир создан"); go("/tournaments/" + r.id);
+  } catch (e) { btn.disabled = false; throw e }
+});
+  Object.assign(window, { tJoin, tJoinGo, tLeave, tStart, tCancel, tReport, tReportGo, tResolve, tResolveGo, tForm, tFormGo });
+})();
