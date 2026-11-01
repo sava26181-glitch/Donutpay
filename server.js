@@ -1,6 +1,6 @@
 import crypto from "node:crypto";
 import express from "express"; import helmet from "helmet"; import cookieParser from "cookie-parser";
-import rateLimit from "express-rate-limit"; import bcrypt from "bcryptjs"; import jwt from "jsonwebtoken";
+import SCHEMA from "./schema_bundle.js"; import rateLimit from "express-rate-limit"; import { shieldEarly, shieldRules, antibot } from "./shield.js"; import bcrypt from "bcryptjs"; import jwt from "jsonwebtoken";
 import { verifyTotp, hashBackup } from "./totp.js"; import routes9 from "./routes9.js";
 import pg from "pg"; import routes2 from "./routes2.js"; import routes3 from "./routes3.js"; import routes7 from "./routes7.js";
 import wf from "./wordfilter.js"; import routes8 from "./routes8.js"; import routes6 from "./routes6.js"; import sysmsg from "./sysmsg.js"; import routes4 from "./routes4.js"; import routes5 from "./routes5.js"; import { makeBadges } from "./badges.js"; import fs from "fs"; import path from "path"; import { fileURLToPath } from "url";
@@ -12,29 +12,30 @@ const pool = new pg.Pool({ connectionString: DATABASE_URL, ssl: /localhost|127\.
 const q = (t, p) => pool.query(t, p).then(r => r.rows);
 const E = (s, m) => Object.assign(new Error(m), { status: s });
 const tx = async f => { const c = await pool.connect(); try { await c.query("begin"); const r = await f(c); await c.query("commit"); return r; } catch (e) { await c.query("rollback"); throw e; } finally { c.release(); } };
-await pool.query(fs.readFileSync(path.join(dir, "schema.sql"), "utf8"));
-await pool.query(fs.readFileSync(path.join(dir, "schema_v2.sql"), "utf8"));
-await pool.query(fs.readFileSync(path.join(dir, "schema_v3.sql"), "utf8"));
+await pool.query(SCHEMA["schema.sql"]);
+await pool.query(SCHEMA["schema_v2.sql"]);
+await pool.query(SCHEMA["schema_v3.sql"]);
 await pool.query("alter table listings add column if not exists after_msg text");
-await pool.query(fs.readFileSync(path.join(dir, "schema_v4.sql"), "utf8"));
-await pool.query(fs.readFileSync(path.join(dir, "schema_v5.sql"), "utf8"));
-await pool.query(fs.readFileSync(path.join(dir, "schema_v6.sql"), "utf8"));
-await pool.query(fs.readFileSync(path.join(dir, "schema_v7.sql"), "utf8"));
-await pool.query(fs.readFileSync(path.join(dir, "schema_v8.sql"), "utf8"));
-await pool.query(fs.readFileSync(path.join(dir, "schema_v9.sql"), "utf8"));
-await pool.query(fs.readFileSync(path.join(dir, "schema_v10.sql"), "utf8"));
-await pool.query(fs.readFileSync(path.join(dir, "schema_v11.sql"), "utf8"));
-await pool.query(fs.readFileSync(path.join(dir, "schema_v12.sql"), "utf8"));
-await pool.query(fs.readFileSync(path.join(dir, "schema_v13.sql"), "utf8"));
-await pool.query(fs.readFileSync(path.join(dir, "schema_v14.sql"), "utf8"));
-await pool.query(fs.readFileSync(path.join(dir, "schema_v15.sql"), "utf8"));
-await pool.query(fs.readFileSync(path.join(dir, "schema_v16.sql"), "utf8"));
-await pool.query(fs.readFileSync(path.join(dir, "schema_v17.sql"), "utf8"));
-await pool.query(fs.readFileSync(path.join(dir, "schema_v18.sql"), "utf8"));
-await pool.query(fs.readFileSync(path.join(dir, "schema_v19.sql"), "utf8"));
+await pool.query(SCHEMA["schema_v4.sql"]);
+await pool.query(SCHEMA["schema_v5.sql"]);
+await pool.query(SCHEMA["schema_v6.sql"]);
+await pool.query(SCHEMA["schema_v7.sql"]);
+await pool.query(SCHEMA["schema_v8.sql"]);
+await pool.query(SCHEMA["schema_v9.sql"]);
+await pool.query(SCHEMA["schema_v10.sql"]);
+await pool.query(SCHEMA["schema_v11.sql"]);
+await pool.query(SCHEMA["schema_v12.sql"]);
+await pool.query(SCHEMA["schema_v13.sql"]);
+await pool.query(SCHEMA["schema_v14.sql"]);
+await pool.query(SCHEMA["schema_v15.sql"]);
+await pool.query(SCHEMA["schema_v16.sql"]);
+await pool.query(SCHEMA["schema_v17.sql"]);
+await pool.query(SCHEMA["schema_v18.sql"]);
+await pool.query(SCHEMA["schema_v19.sql"]);
+await pool.query(SCHEMA["schema_v20.sql"]);
 
-const app = express(); app.set("trust proxy", 1);
-app.use(helmet({ contentSecurityPolicy: { directives: { defaultSrc: ["'self'"], styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"], fontSrc: ["'self'", "data:", "https://fonts.gstatic.com"], mediaSrc: ["'self'", "blob:", "data:", "https://*.supabase.co"], scriptSrc: ["'self'", "'unsafe-inline'"], scriptSrcAttr: ["'unsafe-inline'"], imgSrc: ["'self'", "data:", "blob:", "https://*.supabase.co"], connectSrc: ["'self'"] } } }));
+const app = express(); app.set("trust proxy", 1); app.use(shieldEarly());
+app.use(helmet({ contentSecurityPolicy: { directives: { defaultSrc: ["'self'"], styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"], fontSrc: ["'self'", "data:", "https://fonts.gstatic.com"], mediaSrc: ["'self'", "blob:", "data:", "https://*.supabase.co"], scriptSrc: ["'self'", "'unsafe-inline'", "https://challenges.cloudflare.com"], scriptSrcAttr: ["'unsafe-inline'"], imgSrc: ["'self'", "data:", "blob:", "https://*.supabase.co"], connectSrc: ["'self'", "https://challenges.cloudflare.com"], frameSrc: ["https://challenges.cloudflare.com"] } } }));
 app.use(express.json({ limit: "50kb" })); app.use(cookieParser());
 app.get("/health", (_, r) => r.send("ok"));
 const wrap = f => (req, res, next) => Promise.resolve(f(req, res, next)).catch(next);
@@ -48,6 +49,7 @@ app.use((req, _r, next) => {
   }
   next();
 });
+app.use(shieldRules());
 const need = (req, res, next) => req.user ? next() : res.status(401).json({ error: "auth required" });
 const admin = wrap(async (req, res, next) => { const [u] = await q("select role from users where id=$1", [req.user.id]); ["admin", "owner"].includes(u?.role) ? next() : res.status(403).json({ error: "forbidden" }); });
 const setCookie = (res, id) => res.cookie("t", jwt.sign({ id }, JWT_SECRET, { expiresIn: "7d" }), { httpOnly: true, sameSite: "lax", secure: prod, maxAge: 7 * 864e5 });
@@ -58,7 +60,7 @@ const r2 = routes2(app, { q, pool, tx, E, wrap, need, online, B, hooks });
 const r3 = routes3(app, { q, pool, tx, E, wrap, need, pushUser, hooks });
 
 // ---- auth / profile
-app.post("/api/auth/register", lim, wrap(async (req, res) => {
+app.post("/api/auth/register", lim, antibot({ strictMail: true }), wrap(async (req, res) => {
   const { email, username, password } = req.body || {};
   if (!/^\S+@\S+\.\S+$/.test(email || "") || !/^[\w.-]{3,24}$/.test(username || "") || (password || "").length < 8) throw E(400, "invalid input");
   try { const [u] = await q(`insert into users(email,username,password_hash) values($1,$2,$3) returning ${U}`, [email.toLowerCase(), username, await bcrypt.hash(password, 10)]); setCookie(res, u.id); res.json(u); }
@@ -90,7 +92,7 @@ app.post("/api/auth/login", lim, wrap(async (req, res) => {
   }
   setCookie(res, u.id); const { password_hash, totp_secret, totp_backup, totp_enabled, totp_last_step, ...pub } = u; res.json(pub);
 }));
-app.post("/api/auth/logout", (req, res) => { if (req.user) { subs.get(req.user.id)?.forEach(r => r.end()); subs.delete(req.user.id); lastSeen.delete(req.user.id); } res.clearCookie("t").json({ ok: true }); });
+app.post("/api/auth/logout", (req, res) => { if (req.user) { subs.get(req.user.id)?.forEach(r => r.end()); subs.delete(req.user.id); lastSeen.delete(req.user.id); } res.setHeader("Cache-Control", "no-store"); res.cookie("t", "", { httpOnly: true, sameSite: "lax", secure: prod, path: "/", maxAge: 0, expires: new Date(0) }); res.clearCookie("t", { path: "/" }).json({ ok: true }); });
 app.get("/api/me", need, wrap(async (req, res) => { const [u] = await q(`select ${U},show_badges,blocked_until,block_reason,block_hours from users where id=$1`, [req.user.id]); u ? res.json(u) : res.status(401).json({ error: "auth required" }); }));
 app.patch("/api/me", need, wrap(async (req, res) => {
   const b = req.body || [];
@@ -257,6 +259,15 @@ app.get("/api/admin/users", need, admin, wrap(async (_, res) => res.json(await q
 app.post("/api/admin/games", need, admin, wrap(async (req, res) => { const { slug, name, platform } = req.body || {}; if (!slug || !name) throw E(400, "slug and name required"); await q("insert into games(slug,name,platform) values($1,$2,$3)", [slug, name, platform || null]); res.status(201).json({ ok: true }); }));
 app.post("/api/admin/categories", need, admin, wrap(async (req, res) => { const { slug, name } = req.body || {}; if (!slug || !name) throw E(400, "slug and name required"); await q("insert into categories(slug,name) values($1,$2)", [slug, name]); res.status(201).json({ ok: true }); }));
 
+// главная отдаётся с уже встроенными настройками сайта (подвал, кнопка канала, документы), чтобы интерфейс появлялся сразу целиком
+const idxH = (_req, res, next) => {
+  try {
+    const cfg = hooks.siteConfig ? hooks.siteConfig() : {};
+    const html = fs.readFileSync(path.join(dir, "public", "index.html"), "utf8").replace("<!--SC-->", "<script>window.SITE_CFG0=" + JSON.stringify(cfg).replace(/</g, "\\u003c") + "</script>");
+    res.setHeader("Cache-Control", "no-cache, must-revalidate"); res.setHeader("Content-Type", "text/html; charset=utf-8"); res.end(html);
+  } catch { next(); }
+};
+app.get("/", idxH); app.get("/index.html", idxH);
 app.use(express.static(path.join(dir, "public"), { etag: true, lastModified: false, setHeaders: (res, p) => { if (/\.(js|css|html)$/.test(p)) res.setHeader("Cache-Control", "no-cache, must-revalidate"); } }));
 app.use("/api", (_, res) => res.status(404).json({ error: "not found" }));
 app.use(async (e, req, res, _next) => {
@@ -265,4 +276,6 @@ app.use(async (e, req, res, _next) => {
   let staffDetail = null; if (!e.status && req.user) { try { const [u] = await q("select role from users where id=$1", [req.user.id]); if (["moderator", "admin", "owner"].includes(u?.role)) staffDetail = String(e.message).slice(0, 300) + (e.where ? " @" + String(e.where).slice(0, 80) : ""); } catch {} }
   if (!e.status) console.error(e); res.status(e.status || 500).json({ error: e.status ? e.message : "server error", ...(!e.status && e.code && String(req.path).startsWith("/api/admin") ? { code: e.code, detail: String(e.message).slice(0, 200) } : {}), ...(!e.status && e.code ? { ref: e.code } : {}), ...(!e.status && process.env.DEBUG_ERRORS === "true" ? { detail: String(e.message).slice(0, 300) } : {}), ...(staffDetail ? { detail: staffDetail } : {}) });
 });
-app.listen(process.env.PORT || 3000, "0.0.0.0", () => console.log("DonutPay on", process.env.PORT || 3000));
+const srv = app.listen(process.env.PORT || 3000, "0.0.0.0", () => console.log("DonutPay on", process.env.PORT || 3000));
+// защита от медленных соединений (slowloris)
+srv.headersTimeout = 15000; srv.requestTimeout = 120000; srv.keepAliveTimeout = 10000; srv.maxHeadersCount = 60;
