@@ -1,8 +1,8 @@
 // v11: дуэли магазинов (24 часа, очки за качество, призы: бонус на баланс и буст в каталоге)
 export default function routes6(app, { q, pool, tx, E, wrap, need, hooks, pushUser }) {
   const uuid = s => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(s || ""));
-  const DUR_H = 24, BUYER_CAP = 150, MIN_ORDER = 5000, MIN_AGE_D = process.env.DUEL_STRICT === "true" ? 3 : 0, BONUS_PCT = 0.01, BONUS_MAX = 50000, BOOST_H = 12, K = 24;
-  const STRICT = process.env.DUEL_STRICT === "true"; // по умолчанию без защиты от накрутки по отпечаткам, чтобы дуэли можно было проверить на тестовых аккаунтах
+  const DUR_H = 24, BUYER_CAP = 150, MIN_ORDER = 5000, MIN_AGE_D = process.env["DUEL_STRICT"] === "true" ? 3 : 0, BONUS_PCT = 0.01, BONUS_MAX = 50000, BOOST_H = 12, K = 24;
+  const STRICT = process.env["DUEL_STRICT"] === "true"; // по умолчанию без защиты от накрутки по отпечаткам, чтобы дуэли можно было проверить на тестовых аккаунтах
   const FP = (col) => STRICT ? `not exists(select 1 from user_fp fa join user_fp fb on fa.kind=fb.kind and fa.hash=fb.hash where fa.user_id=$1 and fb.user_id=${col})` : "true";
   const LEAGUES = [["Бронза", 0], ["Серебро", 500000], ["Золото", 5000000], ["Платина", 30000000]];
   const league = t => { let i = 0; LEAGUES.forEach((l, k) => { if (t >= l[1]) i = k }); return i };

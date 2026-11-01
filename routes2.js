@@ -1,6 +1,6 @@
 import express from "express"; import crypto from "crypto"; import rateLimit from "express-rate-limit"; import { makeStorage } from "./storage.js"; import wf from "./wordfilter.js";
 export default function routes2(app, { q, pool, tx, E, wrap, need, online, B, hooks }) {
-  const stor = makeStorage(process.env, process.env.DATABASE_URL);
+  const stor = makeStorage(process.env, process.env["DATABASE_URL"]);
   stor.ensure().then(r => console.log("[storage]", r)).catch(e => console.error("[storage] ensure failed:", e.message));
   const env = process.env, BOT = env.TELEGRAM_BOT_TOKEN, BN = (env.TELEGRAM_BOT_USERNAME || "").replace(/^@/, "").trim(), SITE = (env.SITE_URL || "").replace(/\/$/, ""), WS = env.TELEGRAM_WEBHOOK_SECRET, ACH = env.TELEGRAM_ADMIN_CHAT_ID;
   const cfg = !!(BOT && BN && WS), ST = ["moderator", "admin", "owner"], AD = ["admin", "owner"];
@@ -83,6 +83,16 @@ export default function routes2(app, { q, pool, tx, E, wrap, need, online, B, ho
     await q("insert into seller_verifications(user_id,token_hash,expires_at) values($1,$2,now()+interval '15 minutes')", [req.user.id, hash(tok)]);
     res.json({ url: `https://t.me/${BN}?start=${tok}`, expires_in_min: 15 });
   }));
+  // привязка Telegram к аккаунту (для кодов сброса пароля)
+  app.get("/api/me/telegram", need, wrap(async (req, res) => { const [u] = await q("select telegram_id from users where id=$1", [req.user.id]); res.json({ configured: !!cfg && !!BN, linked: !!u?.telegram_id }); }));
+  app.post("/api/me/telegram/link", need, rateLimit({ windowMs: 3600e3, limit: 10 }), wrap(async (req, res) => {
+    if (!cfg || !BN) throw E(503, "telegram unavailable");
+    const tok = crypto.randomBytes(24).toString("base64url");
+    await q("delete from tg_links where user_id=$1", [req.user.id]);
+    await q("insert into tg_links(token_hash,user_id,expires_at) values($1,$2,now()+interval '15 minutes')", [hash(tok), req.user.id]);
+    res.json({ url: `https://t.me/${BN}?start=link_${tok}`, expires_in_min: 15 });
+  }));
+  app.post("/api/me/telegram/unlink", need, wrap(async (req, res) => { await q("update users set telegram_id=null where id=$1 and not seller_verified", [req.user.id]); const [u] = await q("select telegram_id from users where id=$1", [req.user.id]); res.json({ ok: true, linked: !!u?.telegram_id }); }));
   const notifyVerif = (ach, text) => { if (ach) say(ach, text); notifyStaff(text); };
   const say = (id, text, extra) => tg("sendMessage", { chat_id: id, text, ...extra });
   hooks.tgSend = (id, text) => BOT ? say(id, text) : Promise.resolve();
@@ -98,6 +108,14 @@ export default function routes2(app, { q, pool, tx, E, wrap, need, online, B, ho
     if (m.text === "/cancel") { await q("update seller_verifications set status='failed' where telegram_id=$1 and status='awaiting_contact'", [from]); return say(from, "Верификация отменена. Вы можете начать заново на сайте.", { reply_markup: { remove_keyboard: true } }); }
     if (typeof m.text === "string" && m.text.startsWith("/start")) {
       const tok = (m.text.split(" ")[1] || "").slice(0, 80);
+      if (tok.startsWith("link_")) {
+        const [lk] = await q("delete from tg_links where token_hash=$1 and expires_at>now() returning user_id", [hash(tok.slice(5))]);
+        if (!lk) return say(from, "Ссылка недействительна или устарела. Откройте на сайте «Настройки» и нажмите «Привязать Telegram» ещё раз.");
+        const [other] = await q("select 1 from users where telegram_id=$1 and id<>$2", [from, lk.user_id]);
+        if (other) return say(from, "Этот Telegram уже привязан к другому аккаунту DonutPay.");
+        const [u] = await q("update users set telegram_id=$2 where id=$1 returning username", [lk.user_id, from]);
+        return say(from, `Готово: Telegram привязан к аккаунту ${u?.username || ""}. Теперь коды для сброса пароля будут приходить сюда. Если это были не вы, откройте на сайте «Настройки» и отвяжите Telegram.`);
+      }
       const [v] = tok ? await q("update seller_verifications set telegram_id=$2,status='awaiting_contact' where token_hash=$1 and status='pending' and used_at is null and expires_at>now() returning id", [hash(tok), from]) : [];
       if (!v) return say(from, "Ссылка недействительна или устарела. Вернитесь на сайт DonutPay и начните верификацию заново.");
       return say(from, "Чтобы подтвердить, что этот Telegram принадлежит вам, нажмите кнопку и поделитесь своим контактом. DonutPay сохранит только последние 4 цифры номера, номер не показывается другим пользователям.", { reply_markup: { keyboard: [[{ text: "Поделиться контактом", request_contact: true }]], resize_keyboard: true, one_time_keyboard: true } });

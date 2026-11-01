@@ -1,6 +1,6 @@
 // v8: финансы. ВАЖНО: пока это тестовый баланс без реальных платежей.
 export default function routes5(app, { q, pool, tx, E, wrap, need, hooks, pushUser }) {
-  const AD = ["admin", "owner"], TEST = () => String(process.env.TEST_BALANCE || "on").toLowerCase() !== "off";
+  const AD = ["admin", "owner"], TEST = () => String(process.env["TEST_BALANCE"] || "on").toLowerCase() !== "off";
   const uuid = s => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(s || ""));
   const money = v => { const n = Math.round(Number(v) * 100) / 100; return Number.isFinite(n) ? n : NaN };
   const adm = wrap(async (req, _res, next) => { const [u] = await q("select role from users where id=$1", [req.user.id]); if (!u || !AD.includes(u.role)) throw E(403, "forbidden"); req.role = u.role; next(); });
@@ -15,7 +15,7 @@ export default function routes5(app, { q, pool, tx, E, wrap, need, hooks, pushUs
   };
   hooks.move = move;
   // ТЕСТОВЫЕ комиссии (пока баланс тестовый): с продажи и при выводе. Меняются переменными окружения.
-  const FEE_SALE = () => Math.min(50, Math.max(0, +(process.env.SALE_FEE_PCT ?? 7.5))), FEE_WD = () => Math.min(50, Math.max(0, +(process.env.WITHDRAW_FEE_PCT ?? 3))), FEE_DISC = 3;
+  const FEE_SALE = () => Math.min(50, Math.max(0, +(process.env["SALE_FEE_PCT"] ?? 7.5))), FEE_WD = () => Math.min(50, Math.max(0, +(process.env["WITHDRAW_FEE_PCT"] ?? 3))), FEE_DISC = 3;
   const salePct = async (c, uid) => { const { rows: [d] } = await c.query("select fee_until from duel_boosts where user_id=$1 and fee_until>now()", [uid]); return { pct: Math.max(0, FEE_SALE() - (d ? FEE_DISC : 0)), until: d?.fee_until || null } };
   // ---- промокоды: создаёт владелец, скидку оплачивает площадка (продавец получает полную сумму минус комиссию)
   const OWN = wrap(async (req, _res, next) => { const [u] = await q("select role from users where id=$1", [req.user.id]); if (u?.role !== "owner") throw E(403, "owner only"); next(); });

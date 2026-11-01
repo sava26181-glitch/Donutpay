@@ -140,7 +140,7 @@ const lbody = b => {
 };
 app.post("/api/listings", need, wrap(async (req, res) => {
   const [me] = await q("select is_seller,seller_verified from users where id=$1", [req.user.id]); if (!me?.is_seller) throw E(403, "become a seller first");
-  if (process.env.REQUIRE_SELLER_VERIFICATION !== "false" && !me.seller_verified) throw E(403, "seller verification required");
+  if (process.env["REQUIRE_SELLER_VERIFICATION"] !== "false" && !me.seller_verified) throw E(403, "seller verification required");
   const [g] = await q("select id from games where slug=$1", [req.body.game]), [c] = await q("select id from categories where slug=$1", [req.body.category]);
   if (!g || !c) throw E(400, "unknown game or category");
   const [gm] = await q("select count(*)::int n, (count(*) filter (where category_id=$2))::int ok from game_categories where game_id=$1", [g.id, c.id]); if (gm.n > 0 && gm.ok === 0) throw E(400, "category not available for this game");
@@ -274,8 +274,8 @@ app.use(async (e, req, res, _next) => {
   if (res.headersSent) { console.error("handler error after response:", e.message); return; }
   if (e.code === "22P02") e = E(400, "invalid id"); if (e.code === "23505") e = E(409, "already exists"); if (e.code === "23503") e = E(404, "not found"); if (["22003", "22001", "23502", "22007", "22008"].includes(e.code)) e = E(400, "invalid input");
   let staffDetail = null; if (!e.status && req.user) { try { const [u] = await q("select role from users where id=$1", [req.user.id]); if (["moderator", "admin", "owner"].includes(u?.role)) staffDetail = String(e.message).slice(0, 300) + (e.where ? " @" + String(e.where).slice(0, 80) : ""); } catch {} }
-  if (!e.status) console.error(e); res.status(e.status || 500).json({ error: e.status ? e.message : "server error", ...(!e.status && e.code && String(req.path).startsWith("/api/admin") ? { code: e.code, detail: String(e.message).slice(0, 200) } : {}), ...(!e.status && e.code ? { ref: e.code } : {}), ...(!e.status && process.env.DEBUG_ERRORS === "true" ? { detail: String(e.message).slice(0, 300) } : {}), ...(staffDetail ? { detail: staffDetail } : {}) });
+  if (!e.status) console.error(e); res.status(e.status || 500).json({ error: e.status ? e.message : "server error", ...(!e.status && e.code && String(req.path).startsWith("/api/admin") ? { code: e.code, detail: String(e.message).slice(0, 200) } : {}), ...(!e.status && e.code ? { ref: e.code } : {}), ...(!e.status && process.env["DEBUG_ERRORS"] === "true" ? { detail: String(e.message).slice(0, 300) } : {}), ...(staffDetail ? { detail: staffDetail } : {}) });
 });
-const srv = app.listen(process.env.PORT || 3000, "0.0.0.0", () => console.log("DonutPay on", process.env.PORT || 3000));
+const srv = app.listen(process.env["PORT"] || 3000, "0.0.0.0", () => console.log("DonutPay on", process.env["PORT"] || 3000));
 // защита от медленных соединений (slowloris)
 srv.headersTimeout = 15000; srv.requestTimeout = 120000; srv.keepAliveTimeout = 10000; srv.maxHeadersCount = 60;
