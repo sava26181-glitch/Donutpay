@@ -164,7 +164,13 @@ function achBtn(u) { const p = u.progress; if (!p) return ""; window._achU = u; 
 function achOpen() { mdl(`<h3 style="margin-top:0">Ачивки</h3>${achBlock(window._achU)}`) }
 
 // ---- номер заказа в системном сообщении кликабелен: ведёт на настоящую страницу заказа (защита от подделок в чате)
-function ordLink(h, oid) { return oid ? h.replace(/#[0-9A-F]{6,12}/g, x => `<a class="onum" onclick="go('/order/${oid}')">${x}</a>`) : h }
+function ordLink(h, oid) { return h.replace(/#([0-9A-Fa-f]{6,12})/g, (x, n) => `<a class="onum" onclick="event.stopPropagation();goOrd('${oid || ""}','${n}')">${x}</a>`) }
+function goOrd(oid, n) {
+  const staff = typeof isStaff === "function" && isStaff();
+  const adm = async () => { try { const id = oid || (await api("/admin/orders/by-number/" + encodeURIComponent(n))).id; go("/admin?tab=order&id=" + id) } catch { toast("Заказ не найден") } };
+  const byNum = () => api("/orders/by-number/" + encodeURIComponent(n)).then(r => go("/order/" + r.id)).catch(e => staff ? adm() : toast("Заказ не найден"));
+  if (oid) api("/orders/" + oid).then(() => go("/order/" + oid)).catch(() => staff ? adm() : byNum()); else byNum();
+}
 // ---- автовыдача: данные товара от продавца, с кнопкой копирования
 function autoBub(m) {
   const lines = String(m.body || "").split("\n"), head = lines.shift() || "", items = lines.filter(Boolean);
@@ -173,7 +179,7 @@ function autoBub(m) {
 // ---- чат: лента сообщений в стиле маркетплейса
 window.CHO = "";
 function bubx(m) {
-  if (m.kind === "system") return `<div class="fsys" id="m${m.id}"><div class="otn"><b>Система</b><span class="tag">оповещение</span><time>${new Date(m.created_at).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</time></div><div class="otb"><i>i</i><p>${ordLink(esc(m.body), m.order_id)}${m.order_id ? ` <a class="lk" onclick="go('/order/${m.order_id}')">Открыть заказ</a>` : ""}</p></div></div>`;
+  if (m.kind === "system") return `<div class="fsys" id="m${m.id}"><div class="otn"><b>Система</b><span class="tag">оповещение</span><time>${new Date(m.created_at).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</time></div><div class="otb"><i>i</i><p>${ordLink(esc(m.body), m.order_id)}${m.order_id ? ` <a class="lk" onclick="goOrd('${m.order_id}','${(/#([0-9A-Fa-f]{6,12})/.exec(m.body) || [])[1] || ""}')">Открыть заказ</a>` : ""}</p></div></div>`;
   if (m.kind === "auto") return autoBub(m);
   const mine = m.sender_id === ME.id, c = window.CHA || {}, name = mine ? ME.username : (m.sender_name || c.n || window.CHO || "Собеседник"), stf = m.kind === "staff" ? `<span class="tag">модератор</span>` : "", txt = m.body === "[вложение]" ? "" : esc(m.body), need = !mine && window.TR && TR.lang() && txt;
   const lot = m.lot_title && m.listing_id ? `<a class="lotc" onclick="go('/l/${m.listing_id}')">По лоту: ${esc(m.lot_title)}</a>` : "";
@@ -187,14 +193,14 @@ async function msgs(cid) {
   else UNREAD = cs.reduce((a, c) => a + c.unread, 0);
   const tm = c => c.last_at ? new Date(c.last_at).toLocaleDateString("ru-RU", { day: "numeric", month: "short" }) : "";
   const list = cs.map(c => `<a class="cr ${c.unread ? "un" : ""} ${c.id === cid ? "cur" : ""}" onclick="go('/chat/${c.id}')">${avs(c.other, c.avatar_media, c.online, c.avatar_preset)}<span class="cb"><span class="row bet" style="flex-wrap:nowrap"><b>${esc(c.other)}</b><small class="m">${tm(c)}</small></span><span class="m">${esc(c.last || "Нет сообщений")}</span></span>${c.unread ? `<b class="bd" style="position:static">${c.unread}</b>` : ""}</a>`).join("") || empty("Диалогов пока нет. Откройте объявление или профиль пользователя и напишите ему.");
-  const head = cur ? `<div class="chh2"><a class="bk" onclick="go('/m')" aria-label="Назад">‹</a><a class="chu" onclick="go('/u/${encodeURIComponent(cur.other)}')">${avs(cur.other, cur.avatar_media, cur.online, cur.avatar_preset)}<span class="cb"><b>${esc(cur.other)}</b><small class="${on ? "on-s" : "m"}">${on ? "Онлайн" : "Не в сети"}</small></span></a><button class="ib2" onclick="go('/u/${encodeURIComponent(cur.other)}')" aria-label="Профиль">${svg(P.me)}</button><button class="ib2" onclick="go('/tickets?new=1')" aria-label="Поддержка и жалоба">${svg(IC.warn)}</button></div>` : "";
+  const head = cur ? `<div class="chh2"><a class="bk" onclick="go('/m')" aria-label="Назад">‹</a><a class="chu" onclick="go('/u/${encodeURIComponent(cur.other)}')">${avs(cur.other, cur.avatar_media, cur.online, cur.avatar_preset)}<span class="cb"><b>${esc(cur.other)}</b><small data-seen="${esc(cur.other)}" class="${on ? "on-s" : "m"}">${on ? "Онлайн" : seenLabel(cur.other)}</small></span></a><button class="ib2" onclick="go('/u/${encodeURIComponent(cur.other)}')" aria-label="Профиль">${svg(P.me)}</button><button class="ib2" onclick="go('/tickets?new=1')" aria-label="Поддержка и жалоба">${svg(IC.warn)}</button></div>` : "";
   const body = cur ? `${head}<div class="chm" id="chm">${bubs(ms)}</div><div id="achip"></div><div class="cmp cmp2 cmp3"><input id="lt" maxlength="2000" placeholder="Написать..." enterkeyhint="send" onkeydown="if(event.key==='Enter')sendC()"><button class="ib2" onclick="pickAtt('chat')" aria-label="Вложение">${svg(P.clip)}</button><button class="ib2 pri" onclick="sendC()" aria-label="Отправить">${svg(IC.arr)}</button></div>` : '<p class="m" style="margin:auto">Выберите диалог</p>';
   return `<div class="mm ${cid ? "ch" : ""}"><section class="ml"><h2>Сообщения</h2>${list}</section><section class="mc ${cur ? "mc2" : ""}">${body}</section></div>`;
 }
 
 // ---- вкладка «О пользователе»: ачивки и кодекс
 function aboutExtra(u, cs) {
-  const ach = u.progress ? `<div class="card tpl"><b class="tph">Ачивки</b>${achBlock(u)}</div>` : "";
+  const ach = u.progress ? `<div class="card tpl"><b class="tph">Ачивки</b>${u.is_self && u.show_badges === false ? `<p class="m" style="margin:6px 0 10px">Другие пользователи их не видят. Включить показ можно в настройках.</p>` : ""}${achBlock(u)}</div>` : (u.is_self ? `<div class="card tpl"><b class="tph">Ачивки</b><p class="m" style="margin:6px 0 0">Ачивки скрыты. Включить показ можно в настройках.</p></div>` : "");
   let code = "";
   if (cs && cs.state === "ok") code = `<div class="card tpl"><b class="tph">${ic4("shield", 16)} Кодекс продавца</b><p class="m" style="margin:6px 0 0">Продавец подписал кодекс ${fmtD(cs.signed_at)} и обязуется:</p>${rulesHtml(RULES4)}</div>`;
   else if (cs && cs.state) code = `<div class="card tpl"><b class="tph">${ic4("shield", 16)} Кодекс продавца</b><p style="margin:6px 0 0">${cs.state === "scam" ? "Помечен как скам." : "Нарушил кодекс, он сгорел."} ${esc(cs.reason || "")}</p></div>`;
@@ -208,9 +214,9 @@ function rtgS(r, c1, c2) { return r === "owner" ? "" : rtg(r, c1, c2) }
 // ---- кастом карточки лота
 const CST = [["flat", "Обычная"], ["glow", "Свечение"], ["gradient", "Градиент"], ["outline", "Рамка"], ["dashed", "Пунктир"], ["neon", "Неон"], ["stripe", "Полосы"], ["dots", "Точки"], ["shine", "Блик"], ["double", "Двойная"], ["glass", "Стекло"], ["top", "Верхняя линия"]];
 const CBG = ["Хит", "Новинка", "Выгодно", "Топ", "Быстро", "Гарант", "Редкость", "Акция"];
-function cardCls(l) { const c = l.card; return c && c.accent ? "cs-" + (c.style || "flat") + (c.shape ? " sh-" + c.shape : "") : "" }
-function cardSt(l) { const c = l.card; return c && HX.test(c.accent||"") ? `style="--ca:${c.accent};--cb:${HX.test(c.accent2||"") ? c.accent2 : c.accent}"` : "" }
-function cardBadge(l) { const c = l.card; return c && c.accent && c.badge ? `<span class="cbd">${esc(c.badge)}</span>` : "" }
+function cardCls(l) { return "" }
+function cardSt(l) { return "" }
+function cardBadge(l) { return "" }
 let CARDV = { style: "flat", accent: "#8B5CF6" }, CARDID = "";
 async function cardForm(id) {
   need(); const l = await api("/listings/" + id); CARDID = id; const c = l.card || {}; CARDV = { style: c.style || "flat", accent: c.accent || "#8B5CF6", accent2: c.accent2 || "", badge: c.badge || "", shape: c.shape || "", title: !!c.title };
@@ -223,14 +229,15 @@ function cardPrev() { const e = $("#cprev"); if (e) e.innerHTML = `<div class="r
 const cardSave = act(async reset => { await api(`/listings/${CARDID}/card`, { method: "PUT", body: reset === true ? {} : CARDV }); $("#md")?.remove(); toast("Сохранено"); route() });
 
 // ---- подвал и документы
-let SITE_CFG = {};
+let SITE_CFG = window.SITE_CFG0 || {};
 fetch("/api/site-config").then(r => r.json()).then(c => { SITE_CFG = c; const f = document.querySelector("#ft"); if (f) f.innerHTML = ftHtml() }).catch(() => { });
 function ftHtml() {
   const c = SITE_CFG, ext = (u, t) => `<a href="${esc(u)}" target="_blank" rel="noopener">${t}</a>`, ins = (k, t) => `<a onclick="go('/legal/${k}')">${t}</a>`;
-  const links = [c.privacy_url ? ext(c.privacy_url, "Политика конфиденциальности") : ins("privacy", "Политика конфиденциальности"), c.terms_url ? ext(c.terms_url, "Пользовательское соглашение") : ins("terms", "Пользовательское соглашение"), ins("rules", "Правила маркетплейса"), ins("buyer-rules", "Правила покупателей"), ins("seller-rules", "Правила продавцов"), `<a onclick="go('/code')">Кодекс продавца</a>`, ins("contacts", "Контакты"), `<a onclick="go('/tickets')">Поддержка</a>`];
+  const links = [ins("privacy", "Политика конфиденциальности"), ins("terms", "Пользовательское соглашение"), ins("rules", "Правила маркетплейса"), ins("buyer-rules", "Правила покупателей"), ins("seller-rules", "Правила продавцов"), `<a onclick="go('/code')">Кодекс продавца</a>`, ins("contacts", "Контакты"), `<a onclick="go('/tickets')">Поддержка</a>`];
   const sup = [c.support_tg ? `Telegram: <a href="https://t.me/${esc(c.support_tg)}" target="_blank" rel="noopener">@${esc(c.support_tg)}</a>` : "", c.support_email ? `Email: <a href="mailto:${esc(c.support_email)}">${esc(c.support_email)}</a>` : ""].filter(Boolean).join(" · ");
-  return `<div class="fl">${links.join("")}</div>${sup ? `<div class="m" style="margin-top:8px">Поддержка: ${sup}</div>` : ""}<div class="m" style="margin-top:8px">DonutPay. Оплата скоро появится.</div>`;
+  return `${c.channel?`<a class="tgb" href="${esc(c.channel)}" target="_blank" rel="noopener"><span class="tgi"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21.9 4.3c.3-1.2-.9-2.2-2-1.7L2.6 9.9c-1.2.5-1.1 2.2.1 2.6l4.4 1.4 1.7 5.3c.3 1 1.5 1.3 2.3.6l2.5-2.3 4.5 3.3c.8.6 2 .1 2.2-.9l2.6-15.6zM9 13.7l8.8-5.5c.2-.1.4.2.2.3l-7.2 6.7-.3 3.2L9 13.7z"/></svg></span><span class="tgt"><b>Наш Telegram-канал</b><small>Новости, обновления и акции</small></span><span class="tga">›</span></a>`:""}<div class="fl" style="margin-top:14px">${links.join("")}</div>${sup ? `<div class="m" style="margin-top:8px">Поддержка: ${sup}</div>` : ""}<div class="m" style="margin-top:8px">© DonutPay${c.inn ? " · ИНН " + esc(c.inn) : ""}</div>`;
 }
+{ const f0 = document.querySelector("#ft"); if (f0) f0.innerHTML = ftHtml() }
 window.LEGX = {
   rules: () => ["Правила маркетплейса", `<p>DonutPay помогает покупателям и продавцам цифровых товаров и услуг находить друг друга. Пользуясь сайтом, вы соглашаетесь с этими правилами.</p><h3>1. Общее</h3><p>Регистрироваться могут совершеннолетние пользователи. Один человек ведёт один аккаунт. Данные в профиле и объявлениях должны быть правдивыми.</p><h3>2. Что запрещено</h3><p>Обман покупателей и продавцов; продажа товаров, которые вы не вправе продавать; публикация чужих личных данных, паролей и секретных ключей; оскорбления, угрозы и спам; создание нескольких аккаунтов для накрутки отзывов; попытки обойти правила площадки или вывести покупателя на сделку вне сайта.</p><h3>3. Сделки и споры</h3><p>Заказ создаётся на странице лота. Если продавец не выдал товар или выдал не тот, откройте спор в карточке заказа. Спор рассматривает модерация, в нём учитываются переписка и вложения.</p><h3>4. Оплата</h3><p>Приём платежей пока не подключён: заказы создаются со статусом «Ожидает оплаты», деньги не списываются. Условия оплаты и комиссий будут опубликованы до запуска.</p><h3>5. Меры</h3><p>За нарушения мы можем скрыть объявление, ограничить возможности аккаунта или заблокировать его. Продавцу, нарушившему Кодекс продавца, ставится пометка в профиле.</p><h3>6. Контакты</h3><p>Вопросы и жалобы: <a class="lk" onclick="go('/legal/contacts')">страница контактов</a>.</p>`],
   "seller-rules": () => ["Правила продавцов", `<h3>1. Допуск</h3><p>Чтобы публиковать объявления, нужно подписать Кодекс продавца и подтвердить контакт через Telegram-бота.</p><h3>2. Кодекс продавца</h3>${rulesHtml(RULES4)}<p>Нарушение кодекса сжигает его: в профиле появляется пометка, а покупатель видит предупреждение на странице лота.</p><h3>3. Объявления</h3><p>Описывайте товар честно и полно. Указывайте реальное наличие и срок выдачи. Объявления проходят модерацию. Нельзя публиковать пароли и секретные данные в тексте объявления.</p><h3>4. Выдача</h3><p>Выдавайте товар в срок и после выдачи сообщайте об этом покупателю в чате. Переписку по заказу ведите на площадке: она учитывается в спорах.</p><h3>5. Акции</h3><p>Час распродажи и совместные покупки включаются продавцом самостоятельно и действуют только на выбранные лоты.</p><h3>6. Комиссии и выплаты</h3><p>Оплата пока не подключена. Размер комиссии и порядок выплат будут опубликованы до запуска оплаты.</p>`],
@@ -241,7 +248,7 @@ window.LEGX = {
 function resetPage() {
   return `<div class="card" style="max-width:420px;margin:30px auto"><h2 style="margin-top:0">Сброс пароля</h2><p class="m">Введите email. Если аккаунт привязан к Telegram (подтверждение продавца), бот пришлёт одноразовый код на 15 минут. Если привязки нет, напишите в поддержку: администратор выдаст код.</p><label>Email</label><input id="rem" type="email" autocomplete="email"><button class="btn" style="width:100%;margin-top:10px" onclick="resetReq()">Получить код в Telegram</button><hr style="border:0;border-top:1px solid var(--b);margin:16px 0"><label>Код</label><input id="rco" autocomplete="one-time-code" autocapitalize="characters" maxlength="12"><label>Новый пароль (минимум 8 символов)</label><input id="rpw" type="password" autocomplete="new-password"><button class="btn pri" style="width:100%;margin-top:12px" onclick="resetDo()">Сменить пароль</button><p class="m"><a class="lk" onclick="go('/legal/contacts')">Контакты поддержки</a> · <a class="lk" onclick="go('/login')">Вход</a></p></div>`;
 }
-const resetReq = act(async () => { const e = $("#rem").value.trim(); if (!e) throw new Error("Введите email"); await api("/auth/reset/request", { method: "POST", body: { email: e } }); toast("Если аккаунт привязан к Telegram, код отправлен") });
+const resetReq = act(async () => { const e = $("#rem").value.trim(); if (!e) throw new Error("Введите email"); try { await api("/auth/reset/request", { method: "POST", body: { email: e, hp: $("#hp")?.value, cf: window._cf } }) } finally { window.cfReset && cfReset() } toast("Код отправлен") });
 const resetDo = act(async () => { await api("/auth/reset/confirm", { method: "POST", body: { email: $("#rem").value.trim(), code: $("#rco").value, password: $("#rpw").value } }); toast("Пароль изменён. Войдите с новым паролем"); go("/login") });
 const pwCode = act(async name => { const r = await api(`/admin/users/${encodeURIComponent(name)}/reset-code`, { method: "POST" }); mdl(`<h3 style="margin:0 0 8px">Код сброса пароля</h3><p class="m" style="margin:0 0 8px">Передайте код пользователю ${esc(name)} лично. Действует ${r.expires_minutes} минут, одноразовый. Пользователь вводит его на странице «Сброс пароля» вместе со своим email.</p><div class="card" style="font-size:22px;letter-spacing:2px;text-align:center;user-select:all">${esc(r.code)}</div>`) });
 
@@ -296,7 +303,7 @@ function posReset() { if (typeof PV !== "undefined") { PV.pos = {}; pvr() } }
 (function () {
   const vv = window.visualViewport, root = document.documentElement;
   function set() {
-    const kb = !!vv && innerHeight - vv.height > 120, inchat = !!document.querySelector(".mm.ch");
+    const ae = document.activeElement, typing = !!ae && (ae.id === "lt" || ae.id === "otm"), kb = (!!vv && innerHeight - vv.height > 120) || (typing && !document.body.classList.contains("ckb")), inchat = !!document.querySelector(".mm.ch");
     document.body.classList.toggle("inchat", inchat); document.body.classList.toggle("kb", kb);
     const hd = document.querySelector("header"), bn = document.querySelector(".bn");
     root.style.setProperty("--vvh", (vv ? vv.height : innerHeight) + "px"); root.style.setProperty("--vvt", (vv ? vv.offsetTop : 0) + "px");
@@ -307,7 +314,8 @@ function posReset() { if (typeof PV !== "undefined") { PV.pos = {}; pvr() } }
   if (vv) { vv.addEventListener("resize", set); vv.addEventListener("scroll", () => { if (document.body.classList.contains("inchat")) { window.scrollTo(0, 0); set() } }) }
   addEventListener("resize", set); addEventListener("hashchange", () => setTimeout(set, 60));
   const ar = window.afterRoute; window.afterRoute = function () { const r = ar && ar.apply(this, arguments); setTimeout(set, 0); return r };
-  document.addEventListener("focusin", e => { if (e.target && e.target.id === "lt") [60, 250, 500, 900].forEach(d => setTimeout(set, d)) }); document.addEventListener("focusout", e => { if (e.target && e.target.id === "lt") [60, 300, 700].forEach(d => setTimeout(set, d)) });
+  const settle = ms => { const t0 = performance.now(); (function f() { set(); if (performance.now() - t0 < ms) requestAnimationFrame(f) })() };
+  document.addEventListener("focusin", e => { if (e.target && e.target.id === "lt") { settle(1400); [1800, 2600].forEach(d => setTimeout(set, d)) } }); document.addEventListener("focusout", e => { if (e.target && e.target.id === "lt") { settle(900); setTimeout(set, 1300) } });
   set();
 })();
 
@@ -337,7 +345,7 @@ ${pr ? `<div class="ckpr"><span><b>${esc(pr.code)}</b>${pct ? ` · скидка 
 });
 const payDo = act(async () => {
   if (window._paying) return; window._paying = 1; const id = window._pay.id;
-  try { const r = await api(`/orders/${id}/pay-balance`, { method: "POST" }); $("#md")?.remove(); mdl(`<div style="text-align:center"><div class="okc">✓</div><h3 style="margin:8px 0 2px">Оплата прошла</h3><p class="m" style="margin:0 0 10px">Заказ #${esc(r.number || "")} оплачен ${new Date().toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</p></div>${ckSteps(1)}<p class="m" style="margin:10px 0">Сообщение об оплате отправлено продавцу в чат, он выдаст товар. Когда всё получите, нажмите «Подтвердить получение» в заказе.</p><button class="btn pri" style="width:100%" onclick="$('#md').remove();go('/order/${id}')">Открыть страницу заказа</button>`); SFX.play && SFX.play("ok"); go("/order/" + id) }
+  try { const r = await api(`/orders/${id}/pay-balance`, { method: "POST" }); $("#md")?.remove(); mdl(`<div style="text-align:center"><div class="okc">✓</div><h3 style="margin:8px 0 2px">Оплата прошла</h3><p class="m" style="margin:0 0 10px">Заказ #${esc(r.number || "")} оплачен ${new Date().toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</p></div>${ckSteps(1)}<button class="btn pri big" style="width:100%;margin-top:14px" onclick="$('#md').remove();go('/order/${id}')">Перейти к заказу</button>`); SFX.play && SFX.play("ok") }
   finally { window._paying = 0 }
 });
 const payTop = act(async () => { if (window._paying) return; window._paying = 1; try { await api("/finance/topup", { method: "POST", body: { amount: Math.max(10, window._pay.need) } }) } finally { window._paying = 0 } await payConfirm(window._pay.id) });
