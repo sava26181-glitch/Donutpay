@@ -37,3 +37,5 @@ services:
         sync: false
       - key: OPERATOR_INFO
         sync: false
+      - key: OPERATOR_INN
+        value: "861103156153"

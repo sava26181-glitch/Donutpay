@@ -269,7 +269,7 @@ export default function routes4(app, { q, pool, tx, E, wrap, need, pushUser, L, 
   const siteCfg = () => {
     const e = process.env;
     const ch = (e.TG_CHANNEL || "").trim(), chu = !ch ? "" : /^https?:\/\//i.test(ch) ? ch : "https://t.me/" + ch.replace(/^@/, "").replace(/^t\.me\//, "");
-    return { turnstile: turnstileSiteKey(), privacy_url: (e.PRIVACY_URL || "").trim(), terms_url: (e.TERMS_URL || "").trim(), support_tg: (e.SUPPORT_TG || "").replace(/^@/, "").trim(), support_email: (e.SUPPORT_EMAIL || "").trim(), channel: chu, operator: (e.OPERATOR_NAME || "").trim(), operator_info: (e.OPERATOR_INFO || "").trim(), law: (e.OPERATOR_LAW || "").trim() };
+    return { turnstile: turnstileSiteKey(), privacy_url: (e.PRIVACY_URL || "").trim(), terms_url: (e.TERMS_URL || "").trim(), support_tg: (e.SUPPORT_TG || "").replace(/^@/, "").trim(), support_email: (e.SUPPORT_EMAIL || "").trim(), channel: chu, operator: (e.OPERATOR_NAME || "").trim(), operator_info: (e.OPERATOR_INFO || "").trim(), law: (e.OPERATOR_LAW || "").trim(), inn: (e.OPERATOR_INN || "861103156153").replace(/\D/g, "").slice(0, 12) };
   };
   hooks.siteConfig = siteCfg;
   app.get("/api/site-config", (_req, res) => res.json(siteCfg()));
