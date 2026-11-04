@@ -89,6 +89,7 @@ export default function routes5(app, { q, pool, tx, E, wrap, need, hooks, pushUs
     await c.query("insert into notifications(user_id,type,payload) values($1,'order_refund',$2)", [o.buyer_id, { order_id: o.id, number: o.number, amount: ref }]).catch(() => {});
     return { held: Number(h.amount), refunded: ref };
   };
+  app.get("/api/me/balance", need, wrap(async (req, res) => { const [w] = await q("select balance from wallets where user_id=$1", [req.user.id]); res.json({ balance: Number(w?.balance || 0) }); }));
   app.get("/api/finance", need, wrap(async (req, res) => {
     const type = String(req.query.type || "all"), [w] = await q("select balance from wallets where user_id=$1", [req.user.id]);
     const f = { in: "l.amount>0", out: "l.amount<0 and l.kind<>'withdraw'", withdraw: "l.kind in ('withdraw','withdraw_refund')", all: "true" }[type] || "true";

@@ -50,6 +50,7 @@ await step("schema_v21.sql", SCHEMA["schema_v21.sql"]);
 await step("schema_v22.sql", SCHEMA["schema_v22.sql"]);
 await step("schema_v23.sql", SCHEMA["schema_v23.sql"]);
 await step("schema_v24.sql", SCHEMA["schema_v24.sql"]);
+await step("schema_v25.sql", SCHEMA["schema_v25.sql"]);
 };
 try { await runSchema(); if (await grantOwner(process.env["OWNER_EMAIL"])) console.log("[owner] роль owner выдана:", process.env["OWNER_EMAIL"]); globalThis.__boot = "запуск сервера"; }
 catch (e) {
@@ -101,7 +102,9 @@ const r3 = routes3(app, { q, pool, tx, E, wrap, need, pushUser, hooks });
 // ---- auth / profile
 app.post("/api/auth/register", lim, antibot({ strictMail: true }), wrap(async (req, res) => {
   const { email, username, password } = req.body || {};
-  if (!/^\S+@\S+\.\S+$/.test(email || "") || !/^[\w.-]{3,24}$/.test(username || "") || (password || "").length < 8) throw E(400, "invalid input");
+  if (!/^\S+@\S+\.\S+$/.test(email || "")) throw E(400, "bad email");
+  if (!/^[\w.-]{3,24}$/.test(username || "")) throw E(400, "bad username");
+  if ((password || "").length < 8) throw E(400, "weak password");
   try { const [u] = await q(`insert into users(email,username,password_hash) values($1,$2,$3) returning ${U}`, [email.toLowerCase(), username, await bcrypt.hash(password, 10)]); if (await grantOwner(email)) u.role = "owner"; try { await hooks.syncAdminTg?.(); const [rr] = await q("select role from users where id=$1", [u.id]); if (rr) u.role = rr.role; } catch { } setCookie(res, u.id); res.json(u); }
   catch (e) { if (e.code === "23505") throw E(409, "email or username taken"); throw e; }
 }));
@@ -151,7 +154,7 @@ routes5(app, { q, pool, tx, E, wrap, need, hooks, pushUser });
 routes6(app, { q, pool, tx, E, wrap, need, hooks, pushUser });
 routes7(app, { q, pool, tx, E, wrap, need, hooks, pushUser });
 routes9(app, { q, E, wrap, need, twofaCheck });
-routes10(app, { q, tx, E, wrap, need });
+routes10(app, { q, tx, E, wrap, need, hooks });
 routes11(app, { q, tx, E, wrap, need });
 routes8(app, { q, pool, tx, E, wrap, need, hooks, pushUser, online: uid => online(uid), notifyStaff: t => r2.notifyStaff?.(t) });
 app.get("/api/listings", wrap(async (req, res) => {
@@ -239,7 +242,7 @@ app.post("/api/orders/:id/dispute", need, wrap(async (req, res) => {
     if (o.status === "completed") await hooks.holdForDispute?.(c, o); await c.query("update orders set status='dispute',updated_at=now() where id=$1", [o.id]); await ev(c, o.id, "dispute", req.user.id); r2.notifyStaff("Новый спор по заказу " + o.id.slice(0, 8) + ". Откройте админ-панель сайта."); hooks.pushSys?.(await hooks.sysMsg?.(c, o.id, "dispute", req.user.id)); return { ok: true };
   }));
 }));
-app.get("/api/sellers/:username/reviews", wrap(async (req, res) => res.json(await q("select r.rating,r.body,r.created_at,r.edited_at,r.reply,r.reply_at,b.username reviewer from reviews r join users s on s.id=r.seller_id join users b on b.id=r.reviewer_id where s.username=$1 order by r.created_at desc limit 300", [req.params.username]))));
+app.get("/api/sellers/:username/reviews", wrap(async (req, res) => res.json(await q("select r.rating,r.body,r.created_at,r.edited_at,r.reply,r.reply_at,b.username reviewer,b.avatar_media reviewer_media,b.theme->>'avatar_preset' reviewer_preset from reviews r join users s on s.id=r.seller_id join users b on b.id=r.reviewer_id where s.username=$1 order by r.created_at desc limit 300", [req.params.username]))));
 app.post("/api/payments/webhook", (_, res) => res.status(501).json({ error: "payment provider not configured" }));
 
 // ---- chat (+ SSE для обновления без перезагрузки)

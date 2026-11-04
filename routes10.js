@@ -1,11 +1,11 @@
-// v41: турниры (бесплатные). Сетка строится генератором из bracket.js.
+// v41/v51: турниры (с вступительным взносом). Сетка строится генератором из bracket.js.
 import rateLimit from "express-rate-limit";
 import { buildBracket, report as brReport, finalCode, BYE } from "./bracket.js";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const STAFF = ["moderator", "admin", "owner"];
 
-export default function routes10(app, { q, tx, E, wrap, need }) {
+export default function routes10(app, { q, tx, E, wrap, need, hooks }) {
   const rl = rateLimit({ windowMs: 60e3, limit: 40 });
   const audit = (a, act, id, d) => q("insert into audit_log(actor_id,action,target_type,target_id,details) values($1,$2,'tournament',$3,$4)", [a, act, String(id), d || {}]).catch(() => {});
   const staff = async req => {
@@ -52,7 +52,7 @@ export default function routes10(app, { q, tx, E, wrap, need }) {
   app.get("/api/tournaments", wrap(async (req, res) => {
     const st = ["registration", "running", "finished", "cancelled"].includes(req.query.status) ? req.query.status : null;
     const lim = Math.min(Math.max(+req.query.limit || 30, 1), 60);
-    res.json(await q(`select t.id,t.title,t.game_name,t.format,t.max_players,t.prize_text,t.status,t.start_at,
+    res.json(await q(`select t.id,t.title,t.game_name,t.format,t.max_players,t.prize_text,t.entry_fee::float entry_fee,t.status,t.start_at,
         (select count(*) from tournament_players p where p.tournament_id=t.id)::int players, wu.username winner_name
       from tournaments t left join users wu on wu.id=t.winner_user_id
       where ($1::text is null or t.status=$1)
@@ -80,7 +80,7 @@ export default function routes10(app, { q, tx, E, wrap, need }) {
     }));
     let role = null; if (me) role = (await q("select role from users where id=$1", [me]))[0]?.role;
     res.json({
-      tournament: { id: t.id, title: t.title, game_name: t.game_name, format: t.format, max_players: t.max_players, prize_text: t.prize_text,
+      tournament: { id: t.id, title: t.title, game_name: t.game_name, format: t.format, max_players: t.max_players, prize_text: t.prize_text, entry_fee: Number(t.entry_fee),
         rules_text: t.rules_text, status: t.status, start_at: t.start_at, winner_user_id: t.winner_user_id, winner_name: t.winner_name },
       players: players.map(p => ({ user_id: p.user_id, nick: p.nick, username: p.username, seed: p.seed })),
       matches, joined: !!me && players.some(p => p.user_id === me), staff: STAFF.includes(role),
@@ -96,8 +96,10 @@ export default function routes10(app, { q, tx, E, wrap, need }) {
     if (game.length < 2 || game.length > 60) throw E(400, "bad game");
     if (![4, 8, 16, 32, 64].includes(max)) throw E(400, "bad size");
     if (isNaN(+start)) throw E(400, "bad date");
-    const [t] = await q("insert into tournaments(title,game_name,format,max_players,prize_text,rules_text,start_at,created_by) values($1,$2,$3,$4,$5,$6,$7,$8) returning id",
-      [title, game, fmt, max, String(b.prize_text || "").trim().slice(0, 200) || null, String(b.rules_text || "").trim().slice(0, 4000) || null, start, req.user.id]);
+    const fee = b.entry_fee === "" || b.entry_fee == null ? 0 : Math.round(+b.entry_fee * 100) / 100;
+    if (!Number.isFinite(fee) || fee < 0 || fee > 100000) throw E(400, "bad fee");
+    const [t] = await q("insert into tournaments(title,game_name,format,max_players,prize_text,rules_text,start_at,created_by,entry_fee) values($1,$2,$3,$4,$5,$6,$7,$8,$9) returning id",
+      [title, game, fmt, max, String(b.prize_text || "").trim().slice(0, 200) || null, String(b.rules_text || "").trim().slice(0, 4000) || null, start, req.user.id, fee]);
     audit(req.user.id, "tournament_create", t.id, { title }); res.json({ id: t.id });
   }));
 
@@ -106,13 +108,16 @@ export default function routes10(app, { q, tx, E, wrap, need }) {
     const id = uuid(req.params.id), nick = String(req.body?.nick || "").trim();
     if (nick.length < 2 || nick.length > 40) throw E(400, "bad nick");
     await tx(async c => {
-      const t = (await c.query("select status,max_players,start_at from tournaments where id=$1 for update", [id])).rows[0];
+      const t = (await c.query("select status,max_players,start_at,entry_fee from tournaments where id=$1 for update", [id])).rows[0];
       if (!t) throw E(404, "not found");
       if (t.status !== "registration") throw E(409, "tournament closed");
       const n = (await c.query("select count(*)::int n from tournament_players where tournament_id=$1", [id])).rows[0].n;
       if (n >= t.max_players) throw E(409, "tournament full");
-      const r = await c.query("insert into tournament_players(tournament_id,user_id,nick) values($1,$2,$3) on conflict do nothing", [id, req.user.id, nick]);
+      const fee = Number(t.entry_fee) || 0;
+      const r = await c.query("insert into tournament_players(tournament_id,user_id,nick,paid) values($1,$2,$3,$4) on conflict do nothing", [id, req.user.id, nick, fee]);
       if (!r.rowCount) throw E(409, "already joined");
+      // взнос списывается один раз; если человек вышел и вернулся, второй раз не берётся и не возвращается
+      if (fee > 0) await hooks.move(c, req.user.id, "tournament_fee", -fee, "tournament", id, "tfee:" + id + ":" + req.user.id);
     });
     res.json({ ok: true });
   }));
@@ -147,14 +152,19 @@ export default function routes10(app, { q, tx, E, wrap, need }) {
   }));
   app.post("/api/tournaments/:id/cancel", need, rl, wrap(async (req, res) => {
     await staff(req); const id = uuid(req.params.id);
-    const r = await q("update tournaments set status='cancelled' where id=$1 and status in ('registration','running') returning id", [id]);
-    if (!r.length) throw E(409, "tournament closed");
+    await tx(async c => {
+      const r = (await c.query("update tournaments set status='cancelled' where id=$1 and status in ('registration','running') returning id", [id])).rows;
+      if (!r.length) throw E(409, "tournament closed");
+      // турнир отменён организатором: взносы участникам возвращаются
+      const ps = (await c.query("select user_id,paid from tournament_players where tournament_id=$1 and paid>0", [id])).rows;
+      for (const p of ps) await hooks.move(c, p.user_id, "tournament_refund", Number(p.paid), "tournament", id, "trefund:" + id + ":" + p.user_id);
+    });
     audit(req.user.id, "tournament_cancel", id); res.json({ ok: true });
   }));
 
   // ---- результат от игрока: оба сообщили одинаково — матч засчитан, иначе спор
   app.post("/api/tournament-matches/:id/report", need, rl, wrap(async (req, res) => {
-    const id = uuid(req.params.id), me = +req.body?.me, opp = +req.body?.opp;
+    const id = uuid(req.params.id), num = v => (v === "" || v == null ? NaN : +v), me = num(req.body?.me), opp = num(req.body?.opp);
     if (!Number.isInteger(me) || !Number.isInteger(opp) || me < 0 || opp < 0 || me > 99 || opp > 99) throw E(400, "bad score");
     if (me === opp) throw E(400, "draw not allowed");
     const out = await tx(async c => {
@@ -182,7 +192,8 @@ export default function routes10(app, { q, tx, E, wrap, need }) {
   // ---- решение спора или ручной результат (персонал)
   app.post("/api/tournament-matches/:id/resolve", need, rl, wrap(async (req, res) => {
     await staff(req); const id = uuid(req.params.id), win = String(req.body?.winner || "");
-    const s1 = req.body?.score1 == null ? null : +req.body.score1, s2 = req.body?.score2 == null ? null : +req.body.score2;
+    const sc = v => (v === "" || v == null ? null : (Number.isInteger(+v) && +v >= 0 && +v <= 99 ? +v : NaN)), s1 = sc(req.body?.score1), s2 = sc(req.body?.score2);
+    if (Number.isNaN(s1) || Number.isNaN(s2)) throw E(400, "bad score");
     await tx(async c => {
       const m = (await c.query("select * from tournament_matches where id=$1 for update", [id])).rows[0];
       if (!m) throw E(404, "not found");
@@ -190,7 +201,7 @@ export default function routes10(app, { q, tx, E, wrap, need }) {
       if (t.status !== "running") throw E(409, "tournament closed");
       if (!["ready", "waiting_result", "disputed"].includes(m.status)) throw E(409, "match not open");
       if (win !== m.p1 && win !== m.p2) throw E(400, "bad winner");
-      await finish(c, t, m.code, win, Number.isInteger(s1) ? s1 : null, Number.isInteger(s2) ? s2 : null);
+      await finish(c, t, m.code, win, s1, s2);
     });
     audit(req.user.id, "tournament_resolve", id, { winner: win }); res.json({ ok: true });
   }));
