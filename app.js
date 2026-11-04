@@ -55,6 +55,7 @@ await step("schema_v26.sql", SCHEMA["schema_v26.sql"]);
 await step("schema_v27.sql", SCHEMA["schema_v27.sql"]);
 await step("schema_v28.sql", SCHEMA["schema_v28.sql"]);
 await step("schema_v29.sql", SCHEMA["schema_v29.sql"]);
+await step("schema_v30.sql", SCHEMA["schema_v30.sql"]);
 };
 try { await runSchema(); if (await grantOwner(process.env["OWNER_EMAIL"])) console.log("[owner] роль owner выдана:", process.env["OWNER_EMAIL"]); globalThis.__boot = "запуск сервера"; }
 catch (e) {
@@ -73,13 +74,14 @@ app.get("/api/live", (req, res) => {
   liveC.add(res); const ping = setInterval(() => res.write(": ping\n\n"), 25000); req.on("close", () => { clearInterval(ping); liveC.delete(res); });
 });
 const LIVE_SKIP = /^(presence|stream|live|translate|messages|conversations|telegram|auth|verify|media|me)$/;
+app.use("/api", (req, res, next) => { if (req.method === "GET" && !/^\/(live|stream)/.test(req.path)) res.set("Cache-Control", "no-store"); next(); });
 app.use("/api", (req, res, next) => {
   if (req.method !== "GET" && req.method !== "HEAD" && req.method !== "OPTIONS" && !/\/chat$/.test(req.path)) res.on("finish", () => {
-    const sc = req.path.split("/")[1] || ""; if (res.statusCode >= 400 || LIVE_SKIP.test(sc) || liveT.has(sc)) return;
+    const sc = req.path.split("/")[1] || ""; if (!/^(tournaments|listings|orders|games|battles|duels)$/.test(sc) || /\/(view|views|seen|read|typing)$/.test(req.path)) return; if (res.statusCode >= 400 || LIVE_SKIP.test(sc) || liveT.has(sc)) return;
     liveT.set(sc, setTimeout(() => { liveT.delete(sc); live("refresh", { s: sc }); }, 400));
   }); next();
 });
-const APP_VERSION = "v60";
+const APP_VERSION = "v61";
 app.get("/api/version", (_q, r) => { const h = f => { try { return crypto.createHash("sha1").update(fs.readFileSync(new URL(f, import.meta.url))).digest("hex").slice(0, 8); } catch { return null; } }; r.json({ version: APP_VERSION, files: { routes2: h("./routes2.js"), routes10: h("./routes10.js"), app: h("./app.js") } }); });
 app.get("/health", (_, r) => r.send("ok"));
 const wrap = f => (req, res, next) => Promise.resolve(f(req, res, next)).catch(next);

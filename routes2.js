@@ -78,9 +78,22 @@ export default function routes2(app, { q, pool, tx, E, wrap, need, online, B, ho
   const linkAtt = async (id, uid, ctx, col, mid, ref, c) => { if (!id) return; const r = await (c || pool).query(`update attachments set ${col}=$3 where id=$1 and owner_id=$2 and context=$4 and message_id is null and ticket_message_id is null and dispute_message_id is null and ($5::text is null or ref_id=$5)`, [id, uid, mid, ctx, ref || null]); if (!r.rowCount) throw E(400, "bad attachment"); };
   const notifyStaff = async text => { if (!abOK) return; const us = await q("select admin_telegram_id from users where role in ('moderator','admin','owner') and admin_telegram_id is not null"); for (const u of us) await abSay(u.admin_telegram_id, text); };
   // ---- верификация продавца через Telegram
-  app.get("/api/verify/status", need, wrap(async (req, res) => { const [u] = await q("select seller_verified from users where id=$1", [req.user.id]); res.json({ configured: cfg, required: env.REQUIRE_SELLER_VERIFICATION !== "false", verified: u.seller_verified, missing: [["TELEGRAM_BOT_TOKEN", BOT], ["TELEGRAM_BOT_USERNAME", BN], ["TELEGRAM_WEBHOOK_SECRET", WS]].filter(x => !x[1]).map(x => x[0]) }); }));
+  app.get("/api/verify/status", need, wrap(async (req, res) => { const [u] = await q("select seller_verified from users where id=$1", [req.user.id]); res.json({ configured: cfg, bot: BN, required: env.REQUIRE_SELLER_VERIFICATION !== "false", verified: u.seller_verified, missing: [["TELEGRAM_BOT_TOKEN", BOT], ["TELEGRAM_BOT_USERNAME", BN], ["TELEGRAM_WEBHOOK_SECRET", WS]].filter(x => !x[1]).map(x => x[0]) }); }));
   const hash = t => crypto.createHash("sha256").update(t).digest("hex");
   const activeCode = async uid => { const [e] = await q("select code_plain,extract(epoch from (expires_at-now()))::int left_s from seller_verifications where user_id=$1 and status in ('pending','awaiting_contact') and used_at is null and expires_at>now() and code_plain is not null order by id desc limit 1", [uid]); return e ? { url: `https://t.me/${BN}?start=${e.code_plain}`, code: e.code_plain, bot: BN, expires_in_min: Math.max(1, Math.ceil(e.left_s / 60)) } : null; };
+  app.post("/api/verify/enter", need, rateLimit({ windowMs: 600e3, limit: 15 }), wrap(async (req, res) => {
+    if (!cfg) throw E(503, "verification unavailable");
+    const cd = String(req.body?.code || "").replace(/[\s-]/g, "").toUpperCase(); if (!/^[A-Z0-9]{6}$/.test(cd)) throw E(400, "bad code");
+    const r = await tx(async c => {
+      const { rows: [v] } = await c.query("select * from tg_codes where code_hash=$1 and used_at is null and expires_at>now() for update", [hash(cd)]); if (!v) return null;
+      const { rows: ex } = await c.query("select 1 from users where telegram_id=$1 and id<>$2", [v.telegram_id, req.user.id]); if (ex.length) return "taken";
+      await c.query("update tg_codes set used_at=now() where id=$1", [v.id]);
+      await c.query("update users set telegram_id=$2,seller_verified=true where id=$1", [req.user.id, v.telegram_id]);
+      await c.query("insert into audit_log(actor_id,action,target_type,target_id,details) values($1,'seller_verified','user',$3,$2)", [req.user.id, { telegram_id: String(v.telegram_id), via: "site_code" }, String(req.user.id)]); return true;
+    });
+    if (r === "taken") throw E(409, "telegram taken"); if (!r) throw E(400, "wrong code");
+    res.json({ ok: true });
+  }));
   app.get("/api/verify/active", need, wrap(async (req, res) => res.json((cfg && await activeCode(req.user.id)) || { code: null })));
   app.post("/api/verify/start", need, rateLimit({ windowMs: 3600e3, limit: 8 }), wrap(async (req, res) => {
     if (!cfg) throw E(503, "verification unavailable");
@@ -123,7 +136,7 @@ export default function routes2(app, { q, pool, tx, E, wrap, need, online, B, ho
       const cd = m.text.trim().replace(/^\/?start\s+/i, "").replace(/^\//, "");
       if (/^[A-Za-z0-9]{8}$/.test(cd)) { guess(from); m.text = "/start " + cd.toUpperCase(); }
     }
-    if (typeof m.text === "string" && /^\/(version|ping)(@\w+)?$/i.test(m.text.trim())) return say(from, "Бот DonutPay работает. Версия обработчика: v60 (код отправляется в чат одним сообщением).");
+    if (typeof m.text === "string" && /^\/(version|ping)(@\w+)?$/i.test(m.text.trim())) return say(from, "Бот DonutPay работает. Версия обработчика: v61 (код отправляется в чат одним сообщением).");
     console.log("[telegram:verify] update:", m.contact ? "contact" : String(m.text || "").split(" ")[0].slice(0, 12));
     if (m.text === "/cancel") { await q("update seller_verifications set status='failed' where telegram_id=$1 and status='awaiting_contact'", [from]); return say(from, "Верификация отменена. Вы можете начать заново на сайте.", { reply_markup: { remove_keyboard: true } }); }
     if (typeof m.text === "string" && m.text.startsWith("/start")) {
@@ -137,9 +150,14 @@ export default function routes2(app, { q, pool, tx, E, wrap, need, online, B, ho
         return say(from, `Готово: Telegram привязан к аккаунту ${u?.username || ""}. Теперь коды для сброса пароля будут приходить сюда. Если это были не вы, откройте на сайте «Настройки» и отвяжите Telegram.`);
       }
       // Telegram ID приходит от самого Telegram (его нельзя подделать), поэтому контакт не нужен: код принят, значит аккаунт подтверждён
-      if (!tok) return say(from, "Отправьте сюда код с сайта DonutPay: откройте «Верификация продавца», нажмите «Получить код» и пришлите код в этот чат одним сообщением.");
+      if (!tok || tok === "code") { // v61: бот сам выдаёт код, его вводят на сайте
+        let [e] = await q("select code_plain,extract(epoch from (expires_at-now()))::int left_s from tg_codes where telegram_id=$1 and used_at is null and expires_at>now() order by id desc limit 1", [from]);
+        if (!e) { const AL = "23456789ABCDEFGHJKMNPQRSTUVWXYZ", cd = Array.from(crypto.randomBytes(6), b => AL[b % AL.length]).join("");
+          await q("insert into tg_codes(code_hash,code_plain,telegram_id,expires_at) values($1,$2,$3,now()+interval '15 minutes')", [hash(cd), cd, from]); e = { code_plain: cd, left_s: 900 }; }
+        return say(from, `Ваш код подтверждения: ${e.code_plain}\n\nВведите его на сайте DonutPay в разделе «Верификация продавца». Код действует ${Math.max(1, Math.ceil(e.left_s / 60))} мин. Никому его не передавайте.`);
+      }
       const r = tok ? await tx(async c => {
-        const { rows: [v] } = await c.query("select * from seller_verifications where token_hash=$1 and status in ('pending','awaiting_contact') and used_at is null and expires_at>now() for update", [hash(tok)]);
+        const { rows: [v] } = await c.query("select * from seller_verifications where (token_hash=$1 or upper(code_plain)=$2) and status in ('pending','awaiting_contact') and used_at is null and expires_at>now() for update", [hash(tok), tok.toUpperCase()]);
         if (!v) { // повторная доставка того же сообщения или повторная отправка кода: уже подтверждено этим же Telegram
           const { rows: [d] } = await c.query("select u.username from seller_verifications v join users u on u.id=v.user_id where v.token_hash=$1 and v.status='verified' and v.telegram_id=$2 and v.used_at>now()-interval '1 day'", [hash(tok), from]);
           return d ? { done: d.username } : null; }
@@ -150,10 +168,11 @@ export default function routes2(app, { q, pool, tx, E, wrap, need, online, B, ho
         await c.query("insert into audit_log(actor_id,action,target_type,target_id,details) values($1,'seller_verified','user',$3,$2)", [v.user_id, { telegram_id: from, via: "bot_code" }, String(v.user_id)]); return u.username;
       }) : null;
       if (!r) {
-        const [w] = await q("select status,expires_at<now() expired,used_at from seller_verifications where token_hash=$1", [hash(tok)]);
+        const [w] = await q("select status,expires_at<now() expired,used_at from seller_verifications where token_hash=$1 or upper(code_plain)=$2", [hash(tok), tok.toUpperCase()]);
+        const [dg] = await q("select count(*)::int n from seller_verifications where status in ('pending','awaiting_contact') and used_at is null and expires_at>now()");
         const why = !w ? "такого кода нет (проверьте символы или получите новый код на сайте)" : w.status === "verified" ? "он уже использован" : w.expired ? "срок его действия (15 минут) истёк" : "он больше не действителен";
         console.log("[telegram:verify] код отклонён:", why);
-        return say(from, `Код не принят: ${why}. Откройте на сайте «Верификация продавца», возьмите код и пришлите его сюда одним сообщением. (бот v60)`);
+        return say(from, `Код не принят: ${why}. Откройте на сайте «Верификация продавца», возьмите код и пришлите его сюда одним сообщением. (бот v61, сервер ${(SITE || base || "").replace(/^https?:\/\//, "")}, активных кодов в базе: ${dg?.n ?? 0})`);
       }
       if (r === "taken") return say(from, "Этот Telegram уже привязан к другому аккаунту DonutPay. Один Telegram можно использовать только для одного аккаунта.");
       if (r && r.done) return say(from, `Аккаунт ${r.done} уже верифицирован этим Telegram. Вернитесь на сайт DonutPay.`);
