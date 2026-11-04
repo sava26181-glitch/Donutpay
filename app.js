@@ -52,6 +52,8 @@ await step("schema_v23.sql", SCHEMA["schema_v23.sql"]);
 await step("schema_v24.sql", SCHEMA["schema_v24.sql"]);
 await step("schema_v25.sql", SCHEMA["schema_v25.sql"]);
 await step("schema_v26.sql", SCHEMA["schema_v26.sql"]);
+await step("schema_v27.sql", SCHEMA["schema_v27.sql"]);
+await step("schema_v28.sql", SCHEMA["schema_v28.sql"]);
 };
 try { await runSchema(); if (await grantOwner(process.env["OWNER_EMAIL"])) console.log("[owner] роль owner выдана:", process.env["OWNER_EMAIL"]); globalThis.__boot = "запуск сервера"; }
 catch (e) {
@@ -60,7 +62,7 @@ catch (e) {
 }
 
 const app = express(); app.set("trust proxy", 1); app.use(shieldEarly());
-app.use(helmet({ contentSecurityPolicy: { directives: { defaultSrc: ["'self'"], styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"], fontSrc: ["'self'", "data:", "https://fonts.gstatic.com"], mediaSrc: ["'self'", "blob:", "data:", "https://*.supabase.co"], scriptSrc: ["'self'", "'unsafe-inline'", "https://challenges.cloudflare.com"], scriptSrcAttr: ["'unsafe-inline'"], imgSrc: ["'self'", "data:", "blob:", "https://*.supabase.co"], connectSrc: ["'self'", "https://challenges.cloudflare.com"], frameSrc: ["https://challenges.cloudflare.com"] } } }));
+app.use(helmet({ contentSecurityPolicy: { directives: { defaultSrc: ["'self'"], styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"], fontSrc: ["'self'", "data:", "https://fonts.gstatic.com"], mediaSrc: ["'self'", "blob:", "data:", "https://*.supabase.co"], scriptSrc: ["'self'", "'unsafe-inline'", "https://challenges.cloudflare.com"], scriptSrcAttr: ["'unsafe-inline'"], imgSrc: ["'self'", "data:", "blob:", "https://*.supabase.co"], connectSrc: ["'self'", "https://challenges.cloudflare.com", "https://api.mymemory.translated.net"], frameSrc: ["https://challenges.cloudflare.com"] } } }));
 app.use(express.json({ limit: "50kb" })); app.use(cookieParser());
 app.get("/health", (_, r) => r.send("ok"));
 const wrap = f => (req, res, next) => Promise.resolve(f(req, res, next)).catch(next);
@@ -317,7 +319,9 @@ const idxH = (_req, res, next) => {
   } catch { next(); }
 };
 app.get("/", idxH); app.get("/index.html", idxH);
-app.use(express.static(path.join(dir, "public"), { etag: true, lastModified: false, setHeaders: (res, p) => { if (/\.(js|css|html)$/.test(p)) res.setHeader("Cache-Control", "no-cache, must-revalidate"); } }));
+// файлы с ?v=NN версионируются, поэтому их можно кэшировать надолго: сайт открывается быстрее (без 12 проверок при каждом заходе)
+app.use((req, res, next) => { if (req.query.v && /\.(js|css)$/.test(req.path)) res.setHeader("Cache-Control", "public, max-age=31536000, immutable"); next(); });
+app.use(express.static(path.join(dir, "public"), { etag: true, lastModified: false, setHeaders: (res, p) => { if (/\.(js|css|html)$/.test(p) && !res.getHeader("Cache-Control")) res.setHeader("Cache-Control", "no-cache, must-revalidate"); } }));
 app.use("/api", (_, res) => res.status(404).json({ error: "not found" }));
 app.use(async (e, req, res, _next) => {
   if (res.headersSent) { console.error("handler error after response:", e.message); return; }

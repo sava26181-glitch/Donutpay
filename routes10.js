@@ -98,7 +98,7 @@ export default function routes10(app, { q, tx, E, wrap, need, hooks }) {
     const max = Math.floor(+b.max_players), fmt = b.format === "double" ? "double" : "single", start = new Date(b.start_at);
     if (title.length < 3 || title.length > 80) throw E(400, "bad title");
     if (game.length < 2 || game.length > 60) throw E(400, "bad game");
-    if (!Number.isInteger(max) || max < 4 || max > 128) throw E(400, "bad size");
+    if (!Number.isInteger(max) || max < 2 || max > 128) throw E(400, "bad size");
     // призовые места: минимум одно, у каждого свой приз
     let pr = Array.isArray(b.prizes) ? b.prizes : []; pr = pr.slice(0, 10).map((x, i) => ({ place: i + 1, prize: String(x?.prize ?? x ?? "").trim().slice(0, 100) }));
     if (!pr.length) pr = [{ place: 1, prize: String(b.prize_text || "").trim().slice(0, 100) }];
@@ -124,10 +124,10 @@ export default function routes10(app, { q, tx, E, wrap, need, hooks }) {
       const n = (await c.query("select count(*)::int n from tournament_players where tournament_id=$1", [id])).rows[0].n;
       if (n >= t.max_players) throw E(409, "tournament full");
       const fee = Number(t.entry_fee) || 0;
-      const r = await c.query("insert into tournament_players(tournament_id,user_id,nick,game_id,paid) values($1,$2,$3,$4,$5) on conflict do nothing", [id, req.user.id, nick, gid, fee]);
+      const r = await c.query("insert into tournament_players(tournament_id,user_id,nick,game_id,paid) values($1,$2,$3,$4,$5) on conflict do nothing returning (extract(epoch from created_at)*1000)::bigint ms", [id, req.user.id, nick, gid, fee]);
       if (!r.rowCount) throw E(409, "already joined");
-      // взнос списывается один раз; если человек вышел и вернулся, второй раз не берётся и не возвращается
-      if (fee > 0) await hooks.move(c, req.user.id, "tournament_fee", -fee, "tournament", id, "tfee:" + id + ":" + req.user.id);
+      // каждая запись имеет свой номер: выйти до старта (взнос вернётся) и записаться снова можно сколько угодно раз
+      if (fee > 0) await hooks.move(c, req.user.id, "tournament_fee", -fee, "tournament", id, "tfee:" + id + ":" + req.user.id + ":" + r.rows[0].ms);
     });
     res.json({ ok: true });
   }));
@@ -137,7 +137,9 @@ export default function routes10(app, { q, tx, E, wrap, need, hooks }) {
       const t = (await c.query("select status from tournaments where id=$1 for update", [id])).rows[0];
       if (!t) throw E(404, "not found");
       if (t.status !== "registration") throw E(409, "tournament closed");
-      await c.query("delete from tournament_players where tournament_id=$1 and user_id=$2", [id, req.user.id]);
+      // пока турнир не начался, взнос возвращается полностью
+      const d = (await c.query("delete from tournament_players where tournament_id=$1 and user_id=$2 returning paid,(extract(epoch from created_at)*1000)::bigint ms", [id, req.user.id])).rows[0];
+      if (d && Number(d.paid) > 0) await hooks.move(c, req.user.id, "tournament_refund", Number(d.paid), "tournament", id, "tleave:" + id + ":" + req.user.id + ":" + d.ms);
     });
     res.json({ ok: true });
   }));
@@ -150,7 +152,8 @@ export default function routes10(app, { q, tx, E, wrap, need, hooks }) {
       if (!t) throw E(404, "not found");
       if (t.status !== "registration") throw E(409, "tournament closed");
       const ps = (await c.query("select user_id from tournament_players where tournament_id=$1 order by created_at", [id])).rows.map(r => r.user_id);
-      if (ps.length < 4) throw E(409, "not enough players");
+      if (ps.length < 2) throw E(409, "not enough players");
+      if (t.format === "double" && ps.length < 4) throw E(409, "double needs 4");
       for (let i = 0; i < ps.length; i++) await c.query("update tournament_players set seed=$3 where tournament_id=$1 and user_id=$2", [id, ps[i], i + 1]);
       const M = buildBracket(ps, t.format);
       for (const m of M.values()) await c.query(

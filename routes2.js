@@ -79,12 +79,16 @@ export default function routes2(app, { q, pool, tx, E, wrap, need, online, B, ho
   // ---- верификация продавца через Telegram
   app.get("/api/verify/status", need, wrap(async (req, res) => { const [u] = await q("select seller_verified from users where id=$1", [req.user.id]); res.json({ configured: cfg, required: env.REQUIRE_SELLER_VERIFICATION !== "false", verified: u.seller_verified, missing: [["TELEGRAM_BOT_TOKEN", BOT], ["TELEGRAM_BOT_USERNAME", BN], ["TELEGRAM_WEBHOOK_SECRET", WS]].filter(x => !x[1]).map(x => x[0]) }); }));
   const hash = t => crypto.createHash("sha256").update(t).digest("hex");
+  const activeCode = async uid => { const [e] = await q("select code_plain,extract(epoch from (expires_at-now()))::int left_s from seller_verifications where user_id=$1 and status in ('pending','awaiting_contact') and used_at is null and expires_at>now() and code_plain is not null order by id desc limit 1", [uid]); return e ? { url: `https://t.me/${BN}?start=${e.code_plain}`, code: e.code_plain, bot: BN, expires_in_min: Math.max(1, Math.ceil(e.left_s / 60)) } : null; };
+  app.get("/api/verify/active", need, wrap(async (req, res) => res.json((cfg && await activeCode(req.user.id)) || { code: null })));
   app.post("/api/verify/start", need, rateLimit({ windowMs: 3600e3, limit: 8 }), wrap(async (req, res) => {
     if (!cfg) throw E(503, "verification unavailable");
+    // уже выданный и ещё не истёкший код возвращается тот же (не пропадает при выходе со страницы)
+    const act = await activeCode(req.user.id); if (act) return res.json(act);
     // короткий код: его можно открыть ссылкой или просто отправить боту сообщением
     const AL = "23456789ABCDEFGHJKMNPQRSTUVWXYZ", tok = Array.from(crypto.randomBytes(8), b => AL[b % AL.length]).join("");
     await q("delete from seller_verifications where user_id=$1 and status in ('pending','awaiting_contact')", [req.user.id]);
-    await q("insert into seller_verifications(user_id,token_hash,expires_at) values($1,$2,now()+interval '15 minutes')", [req.user.id, hash(tok)]);
+    await q("insert into seller_verifications(user_id,token_hash,code_plain,expires_at) values($1,$2,$3,now()+interval '15 minutes')", [req.user.id, hash(tok), tok]);
     res.json({ url: `https://t.me/${BN}?start=${tok}`, code: tok, bot: BN, expires_in_min: 15 });
   }));
   // привязка Telegram к аккаунту (для кодов сброса пароля)
