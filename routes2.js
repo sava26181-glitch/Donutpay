@@ -131,6 +131,7 @@ export default function routes2(app, { q, pool, tx, E, wrap, need, online, B, ho
         return say(from, `Готово: Telegram привязан к аккаунту ${u?.username || ""}. Теперь коды для сброса пароля будут приходить сюда. Если это были не вы, откройте на сайте «Настройки» и отвяжите Telegram.`);
       }
       // Telegram ID приходит от самого Telegram (его нельзя подделать), поэтому контакт не нужен: код принят, значит аккаунт подтверждён
+      if (!tok) return say(from, "Отправьте сюда код с сайта DonutPay: откройте «Верификация продавца», нажмите «Получить код» и пришлите код в этот чат одним сообщением.");
       const r = tok ? await tx(async c => {
         const { rows: [v] } = await c.query("select * from seller_verifications where token_hash=$1 and status in ('pending','awaiting_contact') and used_at is null and expires_at>now() for update", [hash(tok)]); if (!v) return null;
         const { rows: ex } = await c.query("select 1 from users where telegram_id=$1 and id<>$2", [from, v.user_id]);
@@ -139,7 +140,7 @@ export default function routes2(app, { q, pool, tx, E, wrap, need, online, B, ho
         const { rows: [u] } = await c.query("update users set telegram_id=$2,seller_verified=true where id=$1 returning username", [v.user_id, from]);
         await c.query("insert into audit_log(actor_id,action,target_type,target_id,details) values($1,'seller_verified','user',$3,$2)", [v.user_id, { telegram_id: from, via: "bot_code" }, String(v.user_id)]); return u.username;
       }) : null;
-      if (!r) return say(from, "Код недействителен или устарел. Вернитесь на сайт DonutPay, откройте «Верификация продавца» и получите новый код.");
+      if (!r) { console.log("[telegram:verify] код не найден или истёк"); return say(from, "Этот код не подходит или уже устарел (он действует 15 минут). Откройте на сайте «Верификация продавца», нажмите «Получить код» и пришлите новый код сюда."); }
       if (r === "taken") return say(from, "Этот Telegram уже привязан к другому аккаунту DonutPay. Один Telegram можно использовать только для одного аккаунта.");
       say(from, `Готово, аккаунт ${r} верифицирован. Вернитесь на сайт DonutPay: вы можете создавать объявления.`, (SITE || base) ? { reply_markup: { inline_keyboard: [[{ text: "Вернуться на DonutPay", url: (SITE || base) + "/#/sell" }]] } } : undefined);
       notifyVerif(ACH, `Новая верификация продавца: ${r}\nTelegram ID: ${from}`);
