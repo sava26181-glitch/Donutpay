@@ -14,12 +14,13 @@ export default function routes2(app, { q, pool, tx, E, wrap, need, online, B, ho
 
   // ---- media (хранится в БД; проверка сигнатуры файла, а не заголовка клиента)
   const mime = b => b.length < 12 ? null : b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47 ? "image/png" : b[0] === 0xff && b[1] === 0xd8 ? "image/jpeg" : b.slice(0, 3).toString() === "GIF" ? "image/gif" : b.slice(0, 4).toString() === "RIFF" && b.slice(8, 12).toString() === "WEBP" ? "image/webp" : null;
-  const LIM = { avatar: 1e6, cover: 2e6, listing: 1e6, news: 2e6 };
+  const LIM = { avatar: 1e6, cover: 2e6, listing: 1e6, news: 2e6, tour: 2e6 };
   app.post("/api/media", need, express.raw({ type: "application/octet-stream", limit: "2mb" }), wrap(async (req, res) => {
     const kind = req.query.kind, b = req.body; if (!LIM[kind] || !Buffer.isBuffer(b)) throw E(400, "bad upload");
-    const m = mime(b); if (!m) throw E(400, "only png, jpeg, webp, gif"); if (b.length > LIM[kind]) throw E(400, "file too large"); if (m === "image/gif" && kind !== "cover" && kind !== "news") throw E(400, "gif only for cover");
+    const m = mime(b); if (!m) throw E(400, "only png, jpeg, webp, gif"); if (b.length > LIM[kind]) throw E(400, "file too large"); if (m === "image/gif" && kind !== "cover" && kind !== "news" && kind !== "tour") throw E(400, "gif only for cover");
+    if (kind === "tour") { const [u] = await q("select role from users where id=$1", [req.user.id]); if (!["organizer", "moderator", "admin", "owner"].includes(u?.role)) { const [h] = await q("select 1 from tournament_helpers where user_id=$1 limit 1", [req.user.id]); if (!h) throw E(403, "forbidden"); } }
     if (kind === "news") { const [u] = await q("select role from users where id=$1", [req.user.id]); if (!["admin", "owner"].includes(u?.role)) throw E(403, "forbidden"); }
-    const [c] = await q("select count(*)::int n from media where owner_id=$1 and kind<>'news'", [req.user.id]); if (kind !== "news" && c.n >= 40) throw E(429, "media limit reached");
+    const [c] = await q("select count(*)::int n from media where owner_id=$1 and kind not in ('news','tour')", [req.user.id]); if (kind !== "news" && kind !== "tour" && c.n >= 40) throw E(429, "media limit reached");
     const ext = { "image/png": "png", "image/jpeg": "jpg", "image/gif": "gif", "image/webp": "webp" }[m];
     if (stor.on) {
       const path = `${kind}/${req.user.id}/${crypto.randomUUID()}.${ext}`;
@@ -122,7 +123,7 @@ export default function routes2(app, { q, pool, tx, E, wrap, need, online, B, ho
       const cd = m.text.trim().replace(/^\/?start\s+/i, "").replace(/^\//, "");
       if (/^[A-Za-z0-9]{8}$/.test(cd)) { guess(from); m.text = "/start " + cd.toUpperCase(); }
     }
-    if (typeof m.text === "string" && /^\/(version|ping)(@\w+)?$/i.test(m.text.trim())) return say(from, "Бот DonutPay работает. Версия обработчика: v57 (код отправляется в чат одним сообщением).");
+    if (typeof m.text === "string" && /^\/(version|ping)(@\w+)?$/i.test(m.text.trim())) return say(from, "Бот DonutPay работает. Версия обработчика: v60 (код отправляется в чат одним сообщением).");
     console.log("[telegram:verify] update:", m.contact ? "contact" : String(m.text || "").split(" ")[0].slice(0, 12));
     if (m.text === "/cancel") { await q("update seller_verifications set status='failed' where telegram_id=$1 and status='awaiting_contact'", [from]); return say(from, "Верификация отменена. Вы можете начать заново на сайте.", { reply_markup: { remove_keyboard: true } }); }
     if (typeof m.text === "string" && m.text.startsWith("/start")) {
@@ -148,7 +149,12 @@ export default function routes2(app, { q, pool, tx, E, wrap, need, online, B, ho
         const { rows: [u] } = await c.query("update users set telegram_id=$2,seller_verified=true where id=$1 returning username", [v.user_id, from]);
         await c.query("insert into audit_log(actor_id,action,target_type,target_id,details) values($1,'seller_verified','user',$3,$2)", [v.user_id, { telegram_id: from, via: "bot_code" }, String(v.user_id)]); return u.username;
       }) : null;
-      if (!r) { console.log("[telegram:verify] код не найден или истёк"); return say(from, "Этот код не подходит или уже устарел (он действует 15 минут). Откройте на сайте «Верификация продавца», нажмите «Получить код» и пришлите новый код сюда."); }
+      if (!r) {
+        const [w] = await q("select status,expires_at<now() expired,used_at from seller_verifications where token_hash=$1", [hash(tok)]);
+        const why = !w ? "такого кода нет (проверьте символы или получите новый код на сайте)" : w.status === "verified" ? "он уже использован" : w.expired ? "срок его действия (15 минут) истёк" : "он больше не действителен";
+        console.log("[telegram:verify] код отклонён:", why);
+        return say(from, `Код не принят: ${why}. Откройте на сайте «Верификация продавца», возьмите код и пришлите его сюда одним сообщением. (бот v60)`);
+      }
       if (r === "taken") return say(from, "Этот Telegram уже привязан к другому аккаунту DonutPay. Один Telegram можно использовать только для одного аккаунта.");
       if (r && r.done) return say(from, `Аккаунт ${r.done} уже верифицирован этим Telegram. Вернитесь на сайт DonutPay.`);
       say(from, `Готово, аккаунт ${r} верифицирован. Вернитесь на сайт DonutPay: вы можете создавать объявления.`, (SITE || base) ? { reply_markup: { inline_keyboard: [[{ text: "Вернуться на DonutPay", url: (SITE || base) + "/#/sell" }]] } } : undefined);

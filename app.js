@@ -54,6 +54,7 @@ await step("schema_v25.sql", SCHEMA["schema_v25.sql"]);
 await step("schema_v26.sql", SCHEMA["schema_v26.sql"]);
 await step("schema_v27.sql", SCHEMA["schema_v27.sql"]);
 await step("schema_v28.sql", SCHEMA["schema_v28.sql"]);
+await step("schema_v29.sql", SCHEMA["schema_v29.sql"]);
 };
 try { await runSchema(); if (await grantOwner(process.env["OWNER_EMAIL"])) console.log("[owner] роль owner выдана:", process.env["OWNER_EMAIL"]); globalThis.__boot = "запуск сервера"; }
 catch (e) {
@@ -64,6 +65,22 @@ catch (e) {
 const app = express(); app.set("trust proxy", 1); app.use(shieldEarly());
 app.use(helmet({ contentSecurityPolicy: { directives: { defaultSrc: ["'self'"], styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"], fontSrc: ["'self'", "data:", "https://fonts.gstatic.com"], mediaSrc: ["'self'", "blob:", "data:", "https://*.supabase.co"], scriptSrc: ["'self'", "'unsafe-inline'", "https://challenges.cloudflare.com"], scriptSrcAttr: ["'unsafe-inline'"], imgSrc: ["'self'", "data:", "blob:", "https://*.supabase.co"], connectSrc: ["'self'", "https://challenges.cloudflare.com", "https://api.mymemory.translated.net"], frameSrc: ["https://challenges.cloudflare.com"] } } }));
 app.use(express.json({ limit: "50kb" })); app.use(cookieParser());
+// ---- реальное время для всех: после любого успешного изменения данных все открытые страницы получают сигнал «обновись»
+const liveC = new Set(), liveT = new Map();
+const live = (ev, d) => liveC.forEach(r => { try { r.write(`event: ${ev}\ndata: ${JSON.stringify(d || {})}\n\n`); } catch { } });
+app.get("/api/live", (req, res) => {
+  res.set({ "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive", "X-Accel-Buffering": "no" }); res.flushHeaders(); res.write("retry: 3000\n\n");
+  liveC.add(res); const ping = setInterval(() => res.write(": ping\n\n"), 25000); req.on("close", () => { clearInterval(ping); liveC.delete(res); });
+});
+const LIVE_SKIP = /^(presence|stream|live|translate|messages|conversations|telegram|auth|verify|media|me)$/;
+app.use("/api", (req, res, next) => {
+  if (req.method !== "GET" && req.method !== "HEAD" && req.method !== "OPTIONS" && !/\/chat$/.test(req.path)) res.on("finish", () => {
+    const sc = req.path.split("/")[1] || ""; if (res.statusCode >= 400 || LIVE_SKIP.test(sc) || liveT.has(sc)) return;
+    liveT.set(sc, setTimeout(() => { liveT.delete(sc); live("refresh", { s: sc }); }, 400));
+  }); next();
+});
+const APP_VERSION = "v60";
+app.get("/api/version", (_q, r) => { const h = f => { try { return crypto.createHash("sha1").update(fs.readFileSync(new URL(f, import.meta.url))).digest("hex").slice(0, 8); } catch { return null; } }; r.json({ version: APP_VERSION, files: { routes2: h("./routes2.js"), routes10: h("./routes10.js"), app: h("./app.js") } }); });
 app.get("/health", (_, r) => r.send("ok"));
 const wrap = f => (req, res, next) => Promise.resolve(f(req, res, next)).catch(next);
 const fpSeen = new Map();
@@ -86,7 +103,7 @@ const admin = wrap(async (req, res, next) => { const [u] = await q("select role 
 const setCookie = (res, id) => res.cookie("t", jwt.sign({ id }, JWT_SECRET, { expiresIn: "7d" }), { httpOnly: true, sameSite: "lax", secure: prod, maxAge: 7 * 864e5 });
 const lim = rateLimit({ windowMs: 15 * 60e3, limit: 30 });
 const U = "id,public_id,username,email,role,is_seller,avatar_url,bio,seller_verified,avatar_media,cover_media,theme";
-const hooks = {}, B = makeBadges(q);
+const hooks = {}, B = makeBadges(q); hooks.live = live;
 // v44: лот ушёл на проверку: уведомление модераторам на сайте (колокольчик) и в Telegram-боте администратора
 hooks.premod = () => process.env["PREMODERATE_LISTINGS"] !== "false";
 hooks.modNotify = async (id, title, reason) => {
