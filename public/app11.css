@@ -152,7 +152,9 @@
   .ai a.on{background:var(--p)!important;color:var(--pon,#fff)!important;opacity:1;border-radius:7px}
   #gl{padding-right:26px!important}
 }
-.lh{color:var(--t)!important;opacity:.9}
-.lh::first-letter{color:var(--p)}
+.lh{color:var(--p)!important}
+.gn{color:var(--t)}
+html[style*="color-scheme: light"] .gn{color:var(--p)}
+.trc a{font-size:14px}
 .crown svg{fill:none!important}.crown{filter:drop-shadow(0 1px 3px rgba(251,191,36,.45))}
 #pvw [data-drag]:active{outline:0;opacity:.85}
