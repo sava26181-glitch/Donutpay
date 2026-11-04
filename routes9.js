@@ -1,6 +1,6 @@
 // v24: безопасность аккаунта — смена пароля и двухэтапная аутентификация (TOTP)
 import bcrypt from "bcryptjs"; import rateLimit from "express-rate-limit";
-import { newSecret, otpUri, verifyTotp, newBackupCodes, hashBackup } from "./totp.js"; import { mailConfigured, sendMail } from "./mailer.js";
+import { newSecret, otpUri, verifyTotp, newBackupCodes, hashBackup } from "./totp.js"; import { mailConfigured, sendMail, mailErr } from "./mailer.js";
 export default function routes9(app, { q, E, wrap, need, twofaCheck }) {
   const audit = (a, act, tt, tid, d) => q("insert into audit_log(actor_id,action,target_type,target_id,details) values($1,$2,$3,$4,$5)", [a, act, tt, String(tid ?? ""), d || {}]).catch(() => {});
   const rl = rateLimit({ windowMs: 15 * 60e3, limit: 20 });
@@ -19,14 +19,14 @@ export default function routes9(app, { q, E, wrap, need, twofaCheck }) {
   app.post("/api/me/2fa/setup", need, rl, wrap(async (req, res) => {
     const [u] = await q("select email,totp_enabled from users where id=$1", [req.user.id]);
     if (u.totp_enabled) throw E(409, "2fa already enabled");
-    const secret = newSecret(); await q("update users set totp_secret=$2 where id=$1", [req.user.id, secret]);
+    const [o] = await q("select totp_secret from users where id=$1", [req.user.id]); const secret = o?.totp_secret || newSecret(); if (!o?.totp_secret) await q("update users set totp_secret=$2 where id=$1", [req.user.id, secret]);
     res.json({ secret, uri: otpUri(secret, u.email) });
   }));
   app.post("/api/me/2fa/enable", need, rl, wrap(async (req, res) => {
     const [u] = await q("select totp_secret,totp_enabled from users where id=$1", [req.user.id]);
     if (!u?.totp_secret || u.totp_enabled) throw E(400, "invalid input");
     const st = verifyTotp(u.totp_secret, req.body?.code); if (st === null) throw E(400, "wrong 2fa code");
-    const codes = newBackupCodes(); await q("update users set totp_enabled=true,totp_last_step=$2,totp_backup=$3::jsonb where id=$1", [req.user.id, st, JSON.stringify(codes.map(hashBackup))]);
+    const codes = newBackupCodes(); await q("update users set totp_enabled=true,totp_last_step=null,totp_backup=$2::jsonb where id=$1", [req.user.id, JSON.stringify(codes.map(hashBackup))]);
     audit(req.user.id, "2fa_enable", "user", req.user.id); res.json({ ok: true, backup_codes: codes });
   }));
   app.post("/api/me/2fa/disable", need, rl, wrap(async (req, res) => {
@@ -41,8 +41,8 @@ export default function routes9(app, { q, E, wrap, need, twofaCheck }) {
   app.post("/api/admin/mail/test", need, rl, wrap(async (req, res) => {
     const [u] = await q("select email,role from users where id=$1", [req.user.id]);
     if (!["admin", "owner"].includes(u?.role)) throw E(403, "forbidden");
-    if (!mailConfigured()) return res.json({ ok: false, error: "Почта не настроена: нужны RESEND_API_KEY + MAIL_FROM или SMTP_HOST/SMTP_USER/SMTP_PASS + MAIL_FROM" });
+    if (!mailConfigured()) return res.json({ ok: false, error: "Почта не настроена: нужны BREVO_API_KEY (или RESEND_API_KEY) + MAIL_FROM, либо SMTP_HOST/SMTP_USER/SMTP_PASS + MAIL_FROM" });
     try { await sendMail({ to: u.email, subject: "Проверка почты DonutPay", text: "Если вы видите это письмо, отправка с сайта работает." }); res.json({ ok: true, to: u.email }); }
-    catch (e) { res.json({ ok: false, error: String(e.message || e).slice(0, 300) }); }
+    catch (e) { res.json({ ok: false, error: mailErr(e).slice(0, 400) }); }
   }));
 }

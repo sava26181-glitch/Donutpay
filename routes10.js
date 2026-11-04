@@ -8,9 +8,13 @@ const STAFF = ["moderator", "admin", "owner"];
 export default function routes10(app, { q, tx, E, wrap, need, hooks }) {
   const rl = rateLimit({ windowMs: 60e3, limit: 40 });
   const audit = (a, act, id, d) => q("insert into audit_log(actor_id,action,target_type,target_id,details) values($1,$2,'tournament',$3,$4)", [a, act, String(id), d || {}]).catch(() => {});
-  const staff = async req => {
-    const [me] = await q("select role from users where id=$1", [req.user.id]);
-    if (!STAFF.includes(me?.role)) throw E(403, "forbidden");
+  const roleOf = async req => (await q("select role from users where id=$1", [req.user.id]))[0]?.role;
+  // создавать турниры могут организаторы и администрация; управлять чужими — только персонал (модератор, админ, владелец)
+  const maker = async req => { if (![...STAFF.slice(1), "organizer"].includes(await roleOf(req))) throw E(403, "forbidden"); };
+  const manage = async (req, tid) => {
+    const role = await roleOf(req); if (STAFF.includes(role)) return;
+    const [t] = await q("select created_by from tournaments where id=$1", [tid]);
+    if (!(role === "organizer" && t && t.created_by === req.user.id)) throw E(403, "forbidden");
   };
   const uuid = id => { if (!UUID.test(String(id))) throw E(404, "not found"); return id; };
 
@@ -67,7 +71,7 @@ export default function routes10(app, { q, tx, E, wrap, need, hooks }) {
     const [t] = await q(`select t.*,wu.username winner_name,cu.username created_name from tournaments t
       left join users wu on wu.id=t.winner_user_id left join users cu on cu.id=t.created_by where t.id=$1`, [id]);
     if (!t) throw E(404, "not found");
-    const players = await q(`select p.user_id,p.nick,p.seed,u.username from tournament_players p join users u on u.id=p.user_id
+    const players = await q(`select p.user_id,p.nick,p.game_id,p.seed,u.username from tournament_players p join users u on u.id=p.user_id
       where p.tournament_id=$1 order by p.created_at`, [id]);
     const nick = new Map(players.map(p => [p.user_id, p.nick]));
     const rows = await q("select * from tournament_matches where tournament_id=$1 order by bracket,round,slot", [id]);
@@ -80,26 +84,31 @@ export default function routes10(app, { q, tx, E, wrap, need, hooks }) {
     }));
     let role = null; if (me) role = (await q("select role from users where id=$1", [me]))[0]?.role;
     res.json({
-      tournament: { id: t.id, title: t.title, game_name: t.game_name, format: t.format, max_players: t.max_players, prize_text: t.prize_text, entry_fee: Number(t.entry_fee),
+      tournament: { id: t.id, title: t.title, game_name: t.game_name, format: t.format, max_players: t.max_players, prize_text: t.prize_text, prizes: t.prizes || [], entry_fee: Number(t.entry_fee), created_name: t.created_name,
         rules_text: t.rules_text, status: t.status, start_at: t.start_at, winner_user_id: t.winner_user_id, winner_name: t.winner_name },
-      players: players.map(p => ({ user_id: p.user_id, nick: p.nick, username: p.username, seed: p.seed })),
-      matches, joined: !!me && players.some(p => p.user_id === me), staff: STAFF.includes(role),
+      players: players.map(p => ({ user_id: p.user_id, nick: p.nick, game_id: p.game_id, username: p.username, seed: p.seed })),
+      matches, joined: !!me && players.some(p => p.user_id === me), staff: STAFF.includes(role) || (role === "organizer" && t.created_by === me),
     });
   }));
 
-  // ---- создание (персонал)
+  // ---- создание (организатор или администрация)
   app.post("/api/tournaments", need, rl, wrap(async (req, res) => {
-    await staff(req);
+    await maker(req);
     const b = req.body || {}, title = String(b.title || "").trim(), game = String(b.game_name || "").trim();
-    const max = +b.max_players, fmt = b.format === "double" ? "double" : "single", start = new Date(b.start_at);
+    const max = Math.floor(+b.max_players), fmt = b.format === "double" ? "double" : "single", start = new Date(b.start_at);
     if (title.length < 3 || title.length > 80) throw E(400, "bad title");
     if (game.length < 2 || game.length > 60) throw E(400, "bad game");
-    if (![4, 8, 16, 32, 64].includes(max)) throw E(400, "bad size");
+    if (!Number.isInteger(max) || max < 4 || max > 128) throw E(400, "bad size");
+    // призовые места: минимум одно, у каждого свой приз
+    let pr = Array.isArray(b.prizes) ? b.prizes : []; pr = pr.slice(0, 10).map((x, i) => ({ place: i + 1, prize: String(x?.prize ?? x ?? "").trim().slice(0, 100) }));
+    if (!pr.length) pr = [{ place: 1, prize: String(b.prize_text || "").trim().slice(0, 100) }];
+    if (pr.length > max) throw E(400, "bad prizes");
+    const prizeText = pr.filter(x => x.prize).map(x => pr.length > 1 ? x.place + " место: " + x.prize : x.prize).join(" · ").slice(0, 300) || null;
     if (isNaN(+start)) throw E(400, "bad date");
     const fee = b.entry_fee === "" || b.entry_fee == null ? 0 : Math.round(+b.entry_fee * 100) / 100;
     if (!Number.isFinite(fee) || fee < 0 || fee > 100000) throw E(400, "bad fee");
-    const [t] = await q("insert into tournaments(title,game_name,format,max_players,prize_text,rules_text,start_at,created_by,entry_fee) values($1,$2,$3,$4,$5,$6,$7,$8,$9) returning id",
-      [title, game, fmt, max, String(b.prize_text || "").trim().slice(0, 200) || null, String(b.rules_text || "").trim().slice(0, 4000) || null, start, req.user.id, fee]);
+    const [t] = await q("insert into tournaments(title,game_name,format,max_players,prize_text,rules_text,start_at,created_by,entry_fee,prizes) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb) returning id",
+      [title, game, fmt, max, prizeText, String(b.rules_text || "").trim().slice(0, 4000) || null, start, req.user.id, fee, JSON.stringify(pr)]);
     audit(req.user.id, "tournament_create", t.id, { title }); res.json({ id: t.id });
   }));
 
@@ -107,6 +116,7 @@ export default function routes10(app, { q, tx, E, wrap, need, hooks }) {
   app.post("/api/tournaments/:id/join", need, rl, wrap(async (req, res) => {
     const id = uuid(req.params.id), nick = String(req.body?.nick || "").trim();
     if (nick.length < 2 || nick.length > 40) throw E(400, "bad nick");
+    const gid = String(req.body?.game_id || "").trim(); if (gid.length < 2 || gid.length > 40) throw E(400, "bad game id");
     await tx(async c => {
       const t = (await c.query("select status,max_players,start_at,entry_fee from tournaments where id=$1 for update", [id])).rows[0];
       if (!t) throw E(404, "not found");
@@ -114,7 +124,7 @@ export default function routes10(app, { q, tx, E, wrap, need, hooks }) {
       const n = (await c.query("select count(*)::int n from tournament_players where tournament_id=$1", [id])).rows[0].n;
       if (n >= t.max_players) throw E(409, "tournament full");
       const fee = Number(t.entry_fee) || 0;
-      const r = await c.query("insert into tournament_players(tournament_id,user_id,nick,paid) values($1,$2,$3,$4) on conflict do nothing", [id, req.user.id, nick, fee]);
+      const r = await c.query("insert into tournament_players(tournament_id,user_id,nick,game_id,paid) values($1,$2,$3,$4,$5) on conflict do nothing", [id, req.user.id, nick, gid, fee]);
       if (!r.rowCount) throw E(409, "already joined");
       // взнос списывается один раз; если человек вышел и вернулся, второй раз не берётся и не возвращается
       if (fee > 0) await hooks.move(c, req.user.id, "tournament_fee", -fee, "tournament", id, "tfee:" + id + ":" + req.user.id);
@@ -134,7 +144,7 @@ export default function routes10(app, { q, tx, E, wrap, need, hooks }) {
 
   // ---- старт и отмена (персонал)
   app.post("/api/tournaments/:id/start", need, rl, wrap(async (req, res) => {
-    await staff(req); const id = uuid(req.params.id);
+    const id = uuid(req.params.id); await manage(req, id);
     await tx(async c => {
       const t = (await c.query("select * from tournaments where id=$1 for update", [id])).rows[0];
       if (!t) throw E(404, "not found");
@@ -151,7 +161,7 @@ export default function routes10(app, { q, tx, E, wrap, need, hooks }) {
     audit(req.user.id, "tournament_start", id); res.json({ ok: true });
   }));
   app.post("/api/tournaments/:id/cancel", need, rl, wrap(async (req, res) => {
-    await staff(req); const id = uuid(req.params.id);
+    const id = uuid(req.params.id); await manage(req, id);
     await tx(async c => {
       const r = (await c.query("update tournaments set status='cancelled' where id=$1 and status in ('registration','running') returning id", [id])).rows;
       if (!r.length) throw E(409, "tournament closed");
@@ -191,7 +201,8 @@ export default function routes10(app, { q, tx, E, wrap, need, hooks }) {
 
   // ---- решение спора или ручной результат (персонал)
   app.post("/api/tournament-matches/:id/resolve", need, rl, wrap(async (req, res) => {
-    await staff(req); const id = uuid(req.params.id), win = String(req.body?.winner || "");
+    const id = uuid(req.params.id), win = String(req.body?.winner || "");
+    { const [mm] = await q("select tournament_id from tournament_matches where id=$1", [id]); if (!mm) throw E(404, "not found"); await manage(req, mm.tournament_id); }
     const sc = v => (v === "" || v == null ? null : (Number.isInteger(+v) && +v >= 0 && +v <= 99 ? +v : NaN)), s1 = sc(req.body?.score1), s2 = sc(req.body?.score2);
     if (Number.isNaN(s1) || Number.isNaN(s2)) throw E(400, "bad score");
     await tx(async c => {

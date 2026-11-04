@@ -4,15 +4,21 @@ export default function routes3(app, { q, pool, tx, E, wrap, need, pushUser, hoo
 
   // ---------- перевод сообщений чата (читающая сторона выбирает язык) ----------
   const LANGS = ["ru", "en", "de", "es", "fr", "it", "pt", "tr", "uk", "pl", "zh", "ja", "ko", "ar"], DL = { en: "EN-US", pt: "PT-BR" };
-  const prov = () => env.DEEPL_API_KEY ? "deepl" : env.GOOGLE_TRANSLATE_API_KEY ? "google" : env.LIBRETRANSLATE_URL ? "libre" : null;
+  const prov = () => env.DEEPL_API_KEY ? "deepl" : env.GOOGLE_TRANSLATE_API_KEY ? "google" : env.LIBRETRANSLATE_URL ? "libre" : "mymemory";
   const translate = async (text, target) => {
     const p = prov(), J = { "Content-Type": "application/json" };
     if (p === "deepl") { const key = env.DEEPL_API_KEY, host = (env.DEEPL_API_URL || (key.endsWith(":fx") ? "https://api-free.deepl.com" : "https://api.deepl.com")).replace(/\/$/, ""); const r = await fetch(host + "/v2/translate", { method: "POST", headers: { ...J, Authorization: "DeepL-Auth-Key " + key }, body: JSON.stringify({ text: [text], target_lang: DL[target] || target.toUpperCase() }) }); if (!r.ok) throw new Error("deepl HTTP " + r.status); const t = (await r.json()).translations[0]; return { text: t.text, detected: String(t.detected_source_language || "").toLowerCase() }; }
     if (p === "google") { const r = await fetch("https://translation.googleapis.com/language/translate/v2?key=" + encodeURIComponent(env.GOOGLE_TRANSLATE_API_KEY), { method: "POST", headers: J, body: JSON.stringify({ q: text, target, format: "text" }) }); if (!r.ok) throw new Error("google HTTP " + r.status); const t = (await r.json()).data.translations[0]; return { text: t.translatedText, detected: String(t.detectedSourceLanguage || "").toLowerCase() }; }
     if (p === "libre") { const r = await fetch(env.LIBRETRANSLATE_URL.replace(/\/$/, "") + "/translate", { method: "POST", headers: J, body: JSON.stringify({ q: text, source: "auto", target, format: "text", api_key: env.LIBRETRANSLATE_API_KEY || undefined }) }); if (!r.ok) throw new Error("libre HTTP " + r.status); const d = await r.json(); return { text: d.translatedText, detected: String(d.detectedLanguage?.language || "").toLowerCase() }; }
+    if (p === "mymemory") { // бесплатный запасной вариант без ключа (лимит провайдера: порядка 5000 символов в сутки на IP)
+      const parts = []; let rest = text; while (rest.length > 450) { let i = rest.lastIndexOf(" ", 450); if (i < 100) i = 450; parts.push(rest.slice(0, i)); rest = rest.slice(i).trimStart(); } parts.push(rest);
+      let out = [], det = "";
+      for (const part of parts) { const r = await fetch("https://api.mymemory.translated.net/get?q=" + encodeURIComponent(part) + "&langpair=" + encodeURIComponent("Autodetect|" + target) + (env.MYMEMORY_EMAIL ? "&de=" + encodeURIComponent(env.MYMEMORY_EMAIL) : ""), { signal: AbortSignal.timeout(8000) }); if (!r.ok) throw new Error("mymemory HTTP " + r.status); const d = await r.json(); if (+d.responseStatus !== 200 || !d.responseData?.translatedText) throw new Error("mymemory " + d.responseStatus + " " + String(d.responseDetails || "").slice(0, 80)); out.push(d.responseData.translatedText); det = det || String(d.responseData.detectedLanguage || "").toLowerCase().slice(0, 2); }
+      return { text: out.join(" "), detected: det };
+    }
     throw new Error("no provider");
   };
-  app.get("/api/translate/status", wrap(async (_req, res) => res.json({ configured: !!prov(), provider: prov(), languages: LANGS, missing: prov() ? [] : ["DEEPL_API_KEY или GOOGLE_TRANSLATE_API_KEY или LIBRETRANSLATE_URL"] })));
+  app.get("/api/translate/status", wrap(async (_req, res) => res.json({ configured: !!prov(), provider: prov(), languages: LANGS, missing: prov() !== "mymemory" ? [] : ["DEEPL_API_KEY или GOOGLE_TRANSLATE_API_KEY или LIBRETRANSLATE_URL"] })));
   app.post("/api/messages/:id/translate", need, rateLimit({ windowMs: 600e3, limit: 200 }), wrap(async (req, res) => {
     const target = String(req.body?.target || ""); if (!LANGS.includes(target)) throw E(400, "bad language");
     if (!prov()) return res.status(503).json({ error: "translation unavailable" });

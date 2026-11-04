@@ -1,5 +1,5 @@
 alter table users drop constraint if exists users_role_check;
-alter table users add constraint users_role_check check (role in ('user','moderator','admin','owner'));
+alter table users add constraint users_role_check check (role in ('user','moderator','admin','owner','organizer'));
 alter table users add column if not exists blocked_until timestamptz, add column if not exists block_reason text,
   add column if not exists avatar_media uuid, add column if not exists cover_media uuid,
   add column if not exists theme jsonb not null default '{}'::jsonb, add column if not exists telegram_id bigint unique,

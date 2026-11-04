@@ -51,6 +51,7 @@ await step("schema_v22.sql", SCHEMA["schema_v22.sql"]);
 await step("schema_v23.sql", SCHEMA["schema_v23.sql"]);
 await step("schema_v24.sql", SCHEMA["schema_v24.sql"]);
 await step("schema_v25.sql", SCHEMA["schema_v25.sql"]);
+await step("schema_v26.sql", SCHEMA["schema_v26.sql"]);
 };
 try { await runSchema(); if (await grantOwner(process.env["OWNER_EMAIL"])) console.log("[owner] роль owner выдана:", process.env["OWNER_EMAIL"]); globalThis.__boot = "запуск сервера"; }
 catch (e) {
@@ -115,7 +116,8 @@ const twofaCheck = async (uid, code) => {
   const [u] = await q("select totp_secret,totp_backup,totp_last_step from users where id=$1 and totp_enabled", [uid]); let ok = false;
   if (u) {
     const st = verifyTotp(u.totp_secret, code);
-    if (st !== null && (u.totp_last_step === null || +st > +u.totp_last_step)) { await q("update users set totp_last_step=$2 where id=$1", [uid, st]); ok = true; }
+    if (st !== null && u.totp_last_step !== null && +st <= +u.totp_last_step) throw E(401, "2fa code reused");
+    if (st !== null) { await q("update users set totp_last_step=$2 where id=$1", [uid, st]); ok = true; }
     else if (st === null && /^[0-9A-Fa-f]{5}-?[0-9A-Fa-f]{5}$/.test(String(code || "").trim())) {
       const hsh = hashBackup(code), list = u.totp_backup || [];
       if (list.includes(hsh)) { await q("update users set totp_backup=$2::jsonb where id=$1", [uid, JSON.stringify(list.filter(x => x !== hsh))]); ok = true; }

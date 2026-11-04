@@ -38,7 +38,7 @@ export default function routes2(app, { q, pool, tx, E, wrap, need, online, B, ho
   // ---- публичный профиль и оформление
   app.get("/api/users/:username", wrap(async (req, res) => {
     const [u] = await q("select u.id,u.public_id,u.username,u.role,u.bio,u.created_at,u.avatar_media,u.cover_media,u.theme,u.seller_verified,u.is_seller,u.show_badges,r.avg rating,coalesce(r.cnt,0)::int reviews from users u left join (select seller_id,round(avg(rating),2) avg,count(*) cnt from reviews group by seller_id) r on r.seller_id=u.id where (u.username=$1 or u.public_id::text=$1) order by (u.username=$1) desc limit 1", [req.params.username]);
-    if (!u) throw E(404, "not found"); if (!ST.includes(u.role)) u.role = null; u.is_self = req.user?.id === u.id; u.online = online(u.id); u.badges = u.show_badges || u.is_self ? (await B.badgesFor([u.id]))[u.id] || [] : []; u.progress = u.show_badges || u.is_self ? await B.progress(u.id) : null;
+    if (!u) throw E(404, "not found"); if (![...ST, "organizer"].includes(u.role)) u.role = null; u.is_self = req.user?.id === u.id; u.online = online(u.id); u.badges = u.show_badges || u.is_self ? (await B.badgesFor([u.id]))[u.id] || [] : []; u.progress = u.show_badges || u.is_self ? await B.progress(u.id) : null;
     { const [st] = await q("select (select count(*) from orders where seller_id=$1 and status='completed')::int sold,(select (percentile_cont(0.5) within group (order by extract(epoch from (r.t-b.t))))::float from conversations c join lateral (select created_at t from messages m where m.conversation_id=c.id and m.sender_id=c.buyer_id order by created_at limit 1) b on true join lateral (select created_at t from messages m where m.conversation_id=c.id and m.sender_id=c.seller_id and m.created_at>b.t order by created_at limit 1) r on true where c.seller_id=$1 and b.t>now()-interval '60 days') med", [u.id]).catch(() => [{}]); u.stats = { sold: st?.sold || 0, resp_sec: st?.med == null ? null : Math.round(st.med) }; }
     res.json(u);
   }));
@@ -118,6 +118,7 @@ export default function routes2(app, { q, pool, tx, E, wrap, need, online, B, ho
       const cd = m.text.trim().replace(/^\/?start\s+/i, "").replace(/^\//, "");
       if (/^[A-Za-z0-9]{8}$/.test(cd)) { guess(from); m.text = "/start " + cd.toUpperCase(); }
     }
+    if (typeof m.text === "string" && /^\/(version|ping)(@\w+)?$/i.test(m.text.trim())) return say(from, "Бот DonutPay работает. Версия обработчика: v57 (код отправляется в чат одним сообщением).");
     console.log("[telegram:verify] update:", m.contact ? "contact" : String(m.text || "").split(" ")[0].slice(0, 12));
     if (m.text === "/cancel") { await q("update seller_verifications set status='failed' where telegram_id=$1 and status='awaiting_contact'", [from]); return say(from, "Верификация отменена. Вы можете начать заново на сайте.", { reply_markup: { remove_keyboard: true } }); }
     if (typeof m.text === "string" && m.text.startsWith("/start")) {
@@ -133,7 +134,10 @@ export default function routes2(app, { q, pool, tx, E, wrap, need, online, B, ho
       // Telegram ID приходит от самого Telegram (его нельзя подделать), поэтому контакт не нужен: код принят, значит аккаунт подтверждён
       if (!tok) return say(from, "Отправьте сюда код с сайта DonutPay: откройте «Верификация продавца», нажмите «Получить код» и пришлите код в этот чат одним сообщением.");
       const r = tok ? await tx(async c => {
-        const { rows: [v] } = await c.query("select * from seller_verifications where token_hash=$1 and status in ('pending','awaiting_contact') and used_at is null and expires_at>now() for update", [hash(tok)]); if (!v) return null;
+        const { rows: [v] } = await c.query("select * from seller_verifications where token_hash=$1 and status in ('pending','awaiting_contact') and used_at is null and expires_at>now() for update", [hash(tok)]);
+        if (!v) { // повторная доставка того же сообщения или повторная отправка кода: уже подтверждено этим же Telegram
+          const { rows: [d] } = await c.query("select u.username from seller_verifications v join users u on u.id=v.user_id where v.token_hash=$1 and v.status='verified' and v.telegram_id=$2 and v.used_at>now()-interval '1 day'", [hash(tok), from]);
+          return d ? { done: d.username } : null; }
         const { rows: ex } = await c.query("select 1 from users where telegram_id=$1 and id<>$2", [from, v.user_id]);
         if (ex.length) { await c.query("update seller_verifications set status='failed' where id=$1", [v.id]); return "taken"; }
         await c.query("update seller_verifications set status='verified',used_at=now(),telegram_id=$2 where id=$1", [v.id, from]);
@@ -142,6 +146,7 @@ export default function routes2(app, { q, pool, tx, E, wrap, need, online, B, ho
       }) : null;
       if (!r) { console.log("[telegram:verify] код не найден или истёк"); return say(from, "Этот код не подходит или уже устарел (он действует 15 минут). Откройте на сайте «Верификация продавца», нажмите «Получить код» и пришлите новый код сюда."); }
       if (r === "taken") return say(from, "Этот Telegram уже привязан к другому аккаунту DonutPay. Один Telegram можно использовать только для одного аккаунта.");
+      if (r && r.done) return say(from, `Аккаунт ${r.done} уже верифицирован этим Telegram. Вернитесь на сайт DonutPay.`);
       say(from, `Готово, аккаунт ${r} верифицирован. Вернитесь на сайт DonutPay: вы можете создавать объявления.`, (SITE || base) ? { reply_markup: { inline_keyboard: [[{ text: "Вернуться на DonutPay", url: (SITE || base) + "/#/sell" }]] } } : undefined);
       notifyVerif(ACH, `Новая верификация продавца: ${r}\nTelegram ID: ${from}`);
       return;
@@ -375,7 +380,7 @@ export default function routes2(app, { q, pool, tx, E, wrap, need, online, B, ho
   }));
   app.post("/api/admin/users/:id/unblock", need, staff(...ST), wrap(async (req, res) => { await q("update users set blocked_until=null,block_reason=null,block_hours=null where id=$1", [req.params.id]); blkC.delete(req.params.id); hooks.clearBlk?.(); await audit(req.user.id, "user_unblock", "user", req.params.id); res.json({ ok: true }); }));
   app.post("/api/admin/users/:id/role", need, staff(...AD), wrap(async (req, res) => {
-    const r = req.body?.role; if (!["user", "moderator", "admin"].includes(r) || req.params.id === req.user.id) throw E(400, "bad role");
+    const r = req.body?.role; if (!["user", "moderator", "admin", "organizer"].includes(r) || req.params.id === req.user.id) throw E(400, "bad role");
     const [t] = await q("select role from users where id=$1", [req.params.id]); if (!t || t.role === "owner") throw E(403, "forbidden"); if ((r === "admin" || t.role === "admin") && req.role !== "owner") throw E(403, "only owner can manage admins");
     await q("update users set role=$2 where id=$1", [req.params.id, r]); await audit(req.user.id, "role_change", "user", req.params.id, { from: t.role, to: r }); res.json({ ok: true });
   }));
