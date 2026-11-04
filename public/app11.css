@@ -175,3 +175,8 @@ html[style*="color-scheme: light"] .gn{color:var(--p)}
 @media(min-width:781px){.tmg{grid-template-columns:repeat(3,minmax(0,1fr))}}
 .umlg{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 14px}.umlt{font-size:13px;color:var(--m)}.lgb{display:flex;gap:6px}
 .lgb a{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border:1px solid var(--b);border-radius:99px;font-size:12.5px;font-weight:700;cursor:pointer;background:var(--c)}.lgb a.on{border-color:var(--p);background:color-mix(in srgb,var(--p) 18%,var(--c))}.lgb svg{display:block;border-radius:3px}
+
+/* v61: компактный переключатель языка */
+.umlg{padding:4px 14px!important;min-height:0}.umlt{font-size:11px!important}.lgb{gap:4px!important}.lgb a{padding:2px 7px!important;font-size:11px!important;gap:4px!important;border-radius:6px!important}.lgb svg{width:14px!important;height:10px!important}
+
+.vfinp{width:100%;margin:8px 0;letter-spacing:4px;font-weight:800;text-transform:uppercase;text-align:center}

@@ -22,22 +22,20 @@
     return wr(`<div class="card"><b>Нужна верификация продавца</b><p class="m" style="margin:6px 0 10px">Чтобы публиковать объявления, подтвердите себя через Telegram. Это займёт минуту.</p><button class="btn pri wr" style="width:100%" onclick="go('/verify')">Пройти верификацию</button></div>`);
   };
   let vfT = null;
-  const vfSteps = (code, bot, url) => `<ol class="vfs">
-    <li class="${code ? "done" : "cur"}"><span class="vfn">1</span><div><b>Получите код</b><p>Код действует 15 минут и привязан к вашему аккаунту.</p>${code ? "" : `<button class="btn pri" onclick="vfGet()">Получить код</button>`}</div></li>
-    <li class="${code ? "cur" : ""}"><span class="vfn">2</span><div><b>Отправьте код боту</b>${code ? `<div class="vfcode" onclick="vfCopy()" title="Нажмите, чтобы скопировать">${esc(code)}</div><div class="vfa"><a class="btn pri" href="${esc(url)}" target="_blank" rel="noopener">Открыть бота</a><button class="btn" onclick="vfCopy()">Копировать код</button></div><p>Нажмите в боте «Старт». Если Telegram не передал код, отправьте боту @${esc(bot)} это сообщение с кодом вручную.</p>` : "<p>Откроется Telegram-бот. Нажмите в нём «Старт» или отправьте код сообщением.</p>"}</div></li>
-    <li><span class="vfn">3</span><div><b>Готово</b><p>Страница обновится сама, как только бот подтвердит код.</p></div></li></ol>`;
-  window.vfGet = act(async () => { const r = await api("/verify/start", { method: "POST" }); window._vc = r; vfDraw(); vfPoll() });
-  window.vfCopy = () => { const c = (window._vc || {}).code; if (!c) return; try { navigator.clipboard.writeText(c).then(() => toast("Код скопирован")) } catch { toast("Скопируйте код вручную") } };
-  const vfDraw = () => { const b = $("#vfb"); if (b) { const c = window._vc; b.innerHTML = vfSteps(c && c.code, c && c.bot, c && c.url) } };
-  const vfPoll = () => { clearInterval(vfT); vfT = setInterval(async () => { if (!$("#vfb")) return clearInterval(vfT); try { const v = await vstat(); if (v.verified) { clearInterval(vfT); ME = await api("/me"); toast("Верификация пройдена"); route() } } catch { } }, 3000) };
+  window.vfEnter = act(async () => {
+    const el = $("#vfin"), c = (el ? el.value : "").trim(); if (!c) return toast("Введите код из бота");
+    try { await api("/verify/enter", { method: "POST", body: { code: c } }); ME = await api("/me"); toast("Верификация пройдена"); route() }
+    catch (e) { const m = String(e && e.message || e); toast(/taken/.test(m) ? "Этот Telegram уже привязан к другому аккаунту" : /bad|wrong/.test(m) ? "Код неверный или устарел. Получите новый в боте" : m) }
+  });
   window.verify = async function () {
-    need(); const v = await vstat(); window._vc = null; clearInterval(vfT);
+    need(); const v = await vstat();
     const head = `<div class="vfh"><span class="vfi">${SHI}</span><div><h2>Верификация продавца</h2><p>Нужна один раз, чтобы публиковать объявления.</p></div></div>`;
-    const code = "";
-    if (v.verified) return `<div class="vf">${head}<div class="card vfok"><span class="vfi ok">${SHI}</span><div><b>Верификация пройдена</b><p class="m">Ваш Telegram подтверждён. Можно создавать объявления.</p></div></div><button class="btn pri vfsell" onclick="go('/sell')">Создать объявление</button>${code}</div>`;
+    if (v.verified) return `<div class="vf">${head}<div class="card vfok"><span class="vfi ok">${SHI}</span><div><b>Верификация пройдена</b><p class="m">Ваш Telegram подтверждён. Можно создавать объявления.</p></div></div><button class="btn pri vfsell" onclick="go('/sell')">Создать объявление</button></div>`;
     if (!v.configured) return `<div class="vf">${head}<div class="card"><b>Верификация временно недоступна</b><p class="m">Бот пока не настроен на сервере. Не хватает переменных окружения: ${(v.missing || []).map(x => `<code>${esc(x)}</code>`).join(", ") || "TELEGRAM_BOT_TOKEN, TELEGRAM_BOT_USERNAME, TELEGRAM_WEBHOOK_SECRET"}.</p></div></div>`;
-    setTimeout(async () => { try { const r = await api("/verify/active"); if (r && r.code && $("#vfb")) { window._vc = r; vfDraw(); vfPoll() } } catch { } }, 0);
-    return `<div class="vf">${head}<div class="card vfc" id="vfb">${vfSteps()}</div><p class="vfn2">Мы сохраняем только ваш Telegram ID, чтобы один Telegram нельзя было использовать для нескольких аккаунтов. Номер телефона и переписка нам недоступны.</p>${code}</div>`;
+    return `<div class="vf">${head}<div class="card vfc" id="vfb"><ol class="vfs">
+      <li class="cur"><span class="vfn">1</span><div><b>Получите код в боте</b><p>Откройте бота и нажмите «Старт». Бот пришлёт код.</p><div class="vfa"><a class="btn pri" href="https://t.me/${esc(v.bot)}?start=code" target="_blank" rel="noopener">Открыть бота</a></div></div></li>
+      <li class="cur"><span class="vfn">2</span><div><b>Введите код здесь</b><input id="vfin" class="in vfinp" maxlength="12" autocomplete="one-time-code" autocapitalize="characters" placeholder="Код из бота" onkeydown="if(event.key==='Enter')vfEnter()"><div class="vfa"><button class="btn pri" onclick="vfEnter()">Подтвердить</button></div><p>Код действует 15 минут.</p></div></li>
+    </ol></div><p class="vfn2">Мы сохраняем только ваш Telegram ID, чтобы один Telegram нельзя было использовать для нескольких аккаунтов. Номер телефона и переписка нам недоступны.</p></div>`;
   };
   // v44: уведомление модератору «лот на проверке» и переход в очередь проверки
   NT6.listing_review = n => `На проверку: ${n.title}${n.reason ? " (" + n.reason + ")" : ""}`;
