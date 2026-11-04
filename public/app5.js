@@ -29,11 +29,11 @@ function otLine(o, e) {
     cancelled: `Заказ <b>${n}</b> отменён.`,
     dispute: `По заказу <b>${n}</b> открыт спор. Подключится модератор, он увидит переписку в этом чате.`,
   }[e.status] || `Статус заказа ${n}: ${esc(ST[e.status] || e.status)}.`;
-  return `<div class="ots"><div class="otn"><b>Система</b><span class="tag">оповещение</span><small class="m">${odt(e.created_at)}</small></div><div class="otb"><i>i</i><p>${t}</p></div></div>`;
+  return `<div class="ots"><div class="otn"><b>Система</b><span class="tag">оповещение</span><small class="m">${odt(e.created_at)}</small></div><div class="otb"><i>i</i><p>${ordLink(t, o.id)}</p></div></div>`;
 }
 function otTimeline(o, ms) {
   const items = ms.filter(m => (m.kind !== "system" && m.kind !== "auto") || m.order_id === o.id).map(m => {
-    if (m.kind === "system") return `<div class="ots"><div class="otn"><b>Система</b><span class="tag">оповещение</span><small class="m">${odt(m.created_at)}</small></div><div class="otb"><i>i</i><p>${esc(m.body)}</p></div></div>`;
+    if (m.kind === "system") return `<div class="ots"><div class="otn"><b>Система</b><span class="tag">оповещение</span><small class="m">${odt(m.created_at)}</small></div><div class="otb"><i>i</i><p>${ordLink(esc(m.body), m.order_id || o.id)}</p></div></div>`;
     if (m.kind === "auto") return autoBub(m);
     return bubx(m);
   });

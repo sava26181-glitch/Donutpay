@@ -6,8 +6,8 @@
 .tch{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}.tch b{overflow-wrap:anywhere}
 .tcf{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap;color:var(--m);font-size:13px}
 .tpz{display:flex;align-items:center;gap:6px;color:var(--pl);font-size:13px;margin-top:2px}.tpz svg{flex:none}
-.tpl{flex:none;padding:2px 9px;border-radius:99px;font-size:12px;font-weight:700;white-space:nowrap;background:color-mix(in srgb,var(--m) 20%,transparent);color:var(--m)}
-.tpl.reg{background:color-mix(in srgb,var(--p) 22%,transparent);color:var(--pl)}.tpl.run{background:color-mix(in srgb,#22c55e 20%,transparent);color:#4ade80}
+.tpil{flex:none;padding:2px 9px;border-radius:99px;font-size:12px;font-weight:700;white-space:nowrap;background:color-mix(in srgb,var(--m) 20%,transparent);color:var(--m)}
+.tpil.reg{background:color-mix(in srgb,var(--p) 22%,transparent);color:var(--pl)}.tpil.run{background:color-mix(in srgb,#22c55e 20%,transparent);color:#4ade80}
 .tin h2{font-size:20px;overflow-wrap:anywhere}
 .twin{display:flex;align-items:center;gap:12px;margin-top:var(--gap)}.twin svg{color:var(--pl)}
 .tpls{display:flex;flex-wrap:wrap;gap:8px}.tpc{padding:5px 11px;border:1px solid var(--b);border-radius:99px;background:var(--c);font-size:13px}.tpc.me{border-color:var(--p);color:var(--pl)}

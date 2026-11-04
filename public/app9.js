@@ -69,7 +69,7 @@ window.settingsPage = function () {
 };
 async function secRender() {
   const box = document.getElementById("secp"); if (!box) return;
-  let s, tg = { configured: false, linked: false }; try { s = await api("/me/security") } catch { box.remove(); return } try { tg = await api("/me/telegram") } catch { }
+  let s; try { s = await api("/me/security") } catch { box.remove(); return }
   const hd = (ic, t, sub, pill) => `<div class="sech"><span class="si2">${ic}</span><span><b>${t}</b><small>${sub}</small>${pill || ""}</span></div>`;
   const fl = (id, lbl, ac, ph) => `<div class="fld"><label for="${id}">${lbl}</label><div class="pwr"><input id="${id}" type="password" autocomplete="${ac}" ${ph ? `placeholder="${ph}"` : ""}><button type="button" class="eye" aria-label="Показать" onclick="eyeTog('${id}')">${IC9.eye}</button></div></div>`;
   box.innerHTML = `<div class="card sx secc">${hd('<svg viewBox="0 0 24 24"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 018 0v4"/></svg>', "Пароль", "Смена пароля для входа")}
@@ -79,9 +79,7 @@ async function secRender() {
   <p class="sp">При входе, кроме пароля, нужен одноразовый код из приложения-аутентификатора (Google Authenticator, Authy, 2FAS и др.).</p>
   <div id="tfbox">${s.twofa
     ? `<p class="sp">Неиспользованных резервных кодов: ${s.backup_left}</p>${fl("tfp", "Пароль", "current-password")}<div class="fld"><label for="tfd">Код из приложения или резервный код</label><input id="tfd" inputmode="numeric" autocomplete="one-time-code"></div><button class="btn dng" onclick="tfOff()">Выключить</button>`
-    : `<button class="btn pri" onclick="tfStart()">Включить</button>`}</div></div>
-  <div class="card sx secc">${hd('<svg viewBox="0 0 24 24"><path d="M21 4L3 11l6 2 2 6 3-4 5 3z"/></svg>', "Telegram", "Коды сброса пароля приходят сюда", tg.configured ? `<span class="pill ${tg.linked ? "ok" : ""}">${tg.linked ? "Привязан" : "Не привязан"}</span>` : "")}
-  ${!tg.configured ? '<p class="sp">Бот пока не настроен на сайте.</p>' : tg.linked ? '<p class="sp">Код для сброса придёт в этот Telegram.</p><button class="btn" onclick="tgUnlink()">Отвязать</button>' : '<p class="sp">Привяжите заранее, чтобы восстановить пароль без почты: откроется бот, нажмите «Старт».</p><button class="btn pri" onclick="tgLink()">Привязать Telegram</button>'}</div>`;
+    : `<button class="btn pri" onclick="tfStart()">Включить</button>`}</div></div>`;
 }
 window.pwChange = act(async () => {
   const a = $("#pwc").value, b = $("#pwn").value, c = $("#pwn2").value;
@@ -109,8 +107,8 @@ function sndCard() {
   const cur = (() => { try { return localStorage.dp_tone || "soft" } catch { return "soft" } })();
   return `<div class="card" id="sndc" style="margin-top:12px"><b>Звук уведомлений</b><p class="m" style="margin:4px 0 0">Нажмите на вариант, чтобы выбрать и услышать. Применяется сразу. Громкость и включение звука настраиваются выше.</p><div class="tnl">${Object.entries(SFX.TONES).map(([k, n]) => `<button type="button" class="${k === cur ? "on" : ""}" onclick="toneSet('${k}')">${n}</button>`).join("")}</div></div>`;
 }
-window.toneSet = k => { try { localStorage.dp_tone = k } catch { } const c = document.getElementById("sndc"); if (c) c.outerHTML = sndCard(); SFX.play("notify", true) };
-function mountSnd() { const st = document.getElementById("stc"); if (st && !document.getElementById("sndc")) st.insertAdjacentHTML("afterend", sndCard()) }
+window.toneSet = k => { try { localStorage.dp_tone = k } catch { } document.querySelectorAll("#tnl button").forEach(b => b.classList.toggle("on", b.getAttribute("onclick") === `toneSet('${k}')`)); SFX.play("notify", true) };
+function mountSnd() { }
 // проверка почты (админ → вкладка «Боты и хранилище»)
 const _bv = window.botsView;
 window.botsView = async function () { return (await _bv()) + `<div class="card"><b>Почта (коды сброса пароля)</b><p class="m" style="margin:4px 0 8px">Отправит тестовое письмо на email вашего аккаунта и покажет причину, если не получилось.</p><button class="btn pri" onclick="mailTest()">Отправить тестовое письмо</button><div id="mres" style="margin-top:10px"></div></div>` };

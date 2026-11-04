@@ -100,7 +100,7 @@ async function codePage() {
   const c = await api("/seller-code"), m = c.mine;
   let st = "";
   if (!ME) st = `<button class="btn pri big" style="width:100%" onclick="NEXT='/code';go('/login')">Войдите, чтобы подписать</button>`;
-  else if (m && m.state === "ok") st = `<div class="card cok">${ic4("shield", 20)}<div><b>Вы подписали кодекс</b><div class="m">${fmtD(m.signed_at)}. Его видят все на вашем профиле и в ваших объявлениях.</div></div></div><div class="row"><button class="btn pri" onclick="go('/sell')">Создать объявление</button><button class="btn" onclick="go('/my')">Мои объявления</button></div>`;
+  else if (m && m.state === "ok") st = `<div class="card cok">${ic4("shield", 20)}<div><b>Вы подписали кодекс</b><div class="m">${fmtD(m.signed_at)}. Его видят все на вашем профиле и в ваших объявлениях.</div></div></div>`;
   else if (m) st = `<div class="card cbad"><b>${m.state === "scam" ? "Вы помечены как скам" : "Ваш кодекс сгорел"}</b><div class="m">${esc(m.reason || "")}</div><div class="m"><small>Подписать кодекс повторно нельзя. Если это ошибка, напишите в поддержку.</small></div></div>`;
   else st = `<label class="chk"><input type="checkbox" id="cag"> <span>Я прочитал(а) кодекс и обязуюсь его соблюдать. Я понимаю, что при нарушении кодекс сгорит и пометка станет публичной.</span></label><button class="btn pri big" style="width:100%;margin-top:12px" onclick="codeSign()">Подписать и стать продавцом</button>`;
   return `<h2 class="h2i">${ic4("shield", 20)}Кодекс продавца</h2><p class="m" style="margin-top:0">Продавец публично берёт на себя обязательства. Репутация строится не на словах, а на правилах, которые видны каждому покупателю.</p>${rulesHtml(c.rules)}<div class="card"><b>Что бывает за нарушение</b><ul class="m" style="margin:6px 0 0;padding-left:18px"><li>Нарушил правило: кодекс сгорает, рядом с ником появляется пометка «нарушил кодекс», причину видят все.</li><li>Скам: аккаунт блокируется сразу, объявления снимаются, рядом с ником остаётся пометка «скам».</li></ul></div>${st}`;
@@ -198,14 +198,13 @@ async function msgs(cid) {
   return `<div class="mm ${cid ? "ch" : ""}"><section class="ml"><h2>Сообщения</h2>${list}</section><section class="mc ${cur ? "mc2" : ""}">${body}</section></div>`;
 }
 
-// ---- вкладка «О пользователе»: ачивки и кодекс
-function aboutExtra(u, cs) {
-  const ach = u.progress ? `<div class="card tpl"><b class="tph">Ачивки</b>${u.is_self && u.show_badges === false ? `<p class="m" style="margin:6px 0 10px">Другие пользователи их не видят. Включить показ можно в настройках.</p>` : ""}${achBlock(u)}</div>` : (u.is_self ? `<div class="card tpl"><b class="tph">Ачивки</b><p class="m" style="margin:6px 0 0">Ачивки скрыты. Включить показ можно в настройках.</p></div>` : "");
-  let code = "";
-  if (cs && cs.state === "ok") code = `<div class="card tpl"><b class="tph">${ic4("shield", 16)} Кодекс продавца</b><p class="m" style="margin:6px 0 0">Продавец подписал кодекс ${fmtD(cs.signed_at)} и обязуется:</p>${rulesHtml(RULES4)}</div>`;
-  else if (cs && cs.state) code = `<div class="card tpl"><b class="tph">${ic4("shield", 16)} Кодекс продавца</b><p style="margin:6px 0 0">${cs.state === "scam" ? "Помечен как скам." : "Нарушил кодекс, он сгорел."} ${esc(cs.reason || "")}</p></div>`;
-  else if (u.is_seller) code = `<div class="card tpl"><b class="tph">${ic4("shield", 16)} Кодекс продавца</b><p class="m" style="margin:6px 0 0">Продавец пока не подписал кодекс.</p></div>`;
-  return ach + code;
+// ---- вкладка «О пользователе»: статистика продавца
+function aboutExtra(u) {
+  const st = u.stats || {}, since = new Date(u.created_at).toLocaleDateString("ru-RU", { month: "long", year: "numeric" }).replace(/\s?г\.?$/, "");
+  const rs = st.resp_sec, resp = rs == null ? "Нет данных" : rs < 60 ? "до минуты" : rs < 3600 ? "около " + Math.round(rs / 60) + " мин" : rs < 86400 ? "около " + Math.round(rs / 3600) + " ч" : "более суток";
+  const cell = (l, v) => `<div class="abc"><small>${l}</small><b>${v}</b></div>`;
+  const msg = u.is_self ? "" : `<button class="btn pri abm" onclick="${ME ? `dm('${esc(u.username)}')` : "NEXT='/u/" + encodeURIComponent(u.username) + "';go('/login')"}">${u.is_seller ? "Написать продавцу" : "Написать"}</button>`;
+  return `<div class="card abt">${cell("Продано товаров", Number(st.sold || 0).toLocaleString("ru-RU"))}${cell("На сайте с", esc(since))}${cell("Скорость ответа", resp)}</div>${msg}`;
 }
 
 // ---- плашка роли в лотах/списках: владелец не показывается, админ и модератор показываются
@@ -232,12 +231,9 @@ const cardSave = act(async reset => { await api(`/listings/${CARDID}/card`, { me
 let SITE_CFG = window.SITE_CFG0 || {};
 fetch("/api/site-config").then(r => r.json()).then(c => { SITE_CFG = c; const f = document.querySelector("#ft"); if (f) f.innerHTML = ftHtml() }).catch(() => { });
 function ftHtml() {
-  const c = SITE_CFG, ext = (u, t) => `<a href="${esc(u)}" target="_blank" rel="noopener">${t}</a>`, ins = (k, t) => `<a onclick="go('/legal/${k}')">${t}</a>`;
-  const grp = (h, a) => `<div class="ftc"><b>${h}</b>${a.join("")}</div>`;
-  const docs = [ins("privacy", "Политика конфиденциальности"), ins("terms", "Пользовательское соглашение"), ins("rules", "Правила маркетплейса"), ins("buyer-rules", "Правила покупателей"), ins("seller-rules", "Правила продавцов"), `<a onclick="go('/code')">Кодекс продавца</a>`];
-  const help = [ins("contacts", "Контакты"), `<a onclick="go('/tickets')">Поддержка</a>`, `<a onclick="go('/tournaments')">Турниры</a>`];
-  const sup = [c.support_tg ? `Telegram: <a href="https://t.me/${esc(c.support_tg)}" target="_blank" rel="noopener">@${esc(c.support_tg)}</a>` : "", c.support_email ? `Email: <a href="mailto:${esc(c.support_email)}">${esc(c.support_email)}</a>` : ""].filter(Boolean).join(" · ");
-  return `${c.channel?`<a class="tgb" href="${esc(c.channel)}" target="_blank" rel="noopener"><span class="tgi"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21.9 4.3c.3-1.2-.9-2.2-2-1.7L2.6 9.9c-1.2.5-1.1 2.2.1 2.6l4.4 1.4 1.7 5.3c.3 1 1.5 1.3 2.3.6l2.5-2.3 4.5 3.3c.8.6 2 .1 2.2-.9l2.6-15.6zM9 13.7l8.8-5.5c.2-.1.4.2.2.3l-7.2 6.7-.3 3.2L9 13.7z"/></svg></span><span class="tgt"><b>Наш Telegram-канал</b><small>Новости, обновления и акции</small></span><span class="tga">›</span></a>`:""}<nav class="ftg">${grp("Документы", docs)}${grp("Помощь", help)}</nav>${sup ? `<div class="fts">Поддержка: ${sup}</div>` : ""}<div class="ftb">© DonutPay${c.inn ? `<span>ИНН ${esc(c.inn)}</span>` : ""}</div>`;
+  const c = SITE_CFG, ins = (k, t) => `<a onclick="go('/legal/${k}')">${t}</a>`;
+  const tg = c.channel ? `<a class="ftsb" href="${esc(c.channel)}" target="_blank" rel="noopener" aria-label="Telegram-канал"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21.9 4.3c.3-1.2-.9-2.2-2-1.7L2.6 9.9c-1.2.5-1.1 2.2.1 2.6l4.4 1.4 1.7 5.3c.3 1 1.5 1.3 2.3.6l2.5-2.3 4.5 3.3c.8.6 2 .1 2.2-.9l2.6-15.6zM9 13.7l8.8-5.5c.2-.1.4.2.2.3l-7.2 6.7-.3 3.2L9 13.7z"/></svg></a>` : "";
+  return `<div class="ft2"><div class="ft2c">© 2026 DonutPay${c.inn ? `<span>ИНН ${esc(c.inn)}</span>` : ""}</div><nav class="ft2l">${ins("privacy", "Политика конфиденциальности")}${ins("terms", "Пользовательское соглашение")}${ins("rules", "Правила маркетплейса")}${ins("buyer-rules", "Правила покупателей")}${ins("seller-rules", "Правила продавцов")}${ins("contacts", "Контакты")}</nav>${tg ? `<div class="ft2s">${tg}</div>` : ""}</div>`;
 }
 { const f0 = document.querySelector("#ft"); if (f0) f0.innerHTML = ftHtml() }
 window.LEGX = {
@@ -264,6 +260,7 @@ function azTop() { const h = document.querySelector("header"); if (h) document.d
 const fm = n => Number(n).toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " ₽";
 function ago(d) { const s = (Date.now() - new Date(d).getTime()) / 1000, n = (k, a) => k + " " + (k % 10 === 1 && k % 100 !== 11 ? a[0] : k % 10 >= 2 && k % 10 <= 4 && (k % 100 < 10 || k % 100 >= 20) ? a[1] : a[2]) + " назад"; if (s < 60) return "только что"; if (s < 3600) return n(Math.floor(s / 60), ["минуту", "минуты", "минут"]); if (s < 86400) return n(Math.floor(s / 3600), ["час", "часа", "часов"]); if (s < 7 * 86400) return n(Math.floor(s / 86400), ["день", "дня", "дней"]); return "" }
 const FOP = {
+  tournament_fee: () => ["Турнир", "Вступительный взнос", "ok"], tournament_refund: () => ["Турнир", "Возврат взноса", "ok"],
   test_topup: () => ["Пополнение тестового баланса", "Завершено", "ok"], topup: () => ["Пополнение баланса", "Завершено", "ok"],
   order_payment: o => ["Заказ #" + (o.order_number || ""), "Оплачено", "ok"], order_payout: o => ["Заказ #" + (o.order_number || "") + " · выплата продавцу", "Завершено", "ok"],
   refund: o => ["Возврат по заказу #" + (o.order_number || ""), "Завершено", "ok"],

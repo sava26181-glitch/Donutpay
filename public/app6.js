@@ -51,6 +51,7 @@ addMsg = function (m) {
 
 // ---- финансы: новый вид
 const FK = {
+  tournament_fee: ["Турнир", "Вступительный взнос", "out"], tournament_refund: ["Турнир", "Возврат взноса", "in"],
   test_topup: ["Пополнение", "Тестовый баланс", "in"], topup: ["Пополнение", "Баланс", "in"],
   order_payment: o => ["Покупка", "Заказ #" + (o.order_number || ""), "out"], order_payout: o => ["Продажа", "Заказ #" + (o.order_number || ""), "in"],
   refund: o => ["Возврат", "Заказ #" + (o.order_number || ""), "in"], withdraw: o => ["Вывод", { pending: "В обработке", paid: "Выплачено", rejected: "Отклонено" }[o.w_status] || "В обработке", "wd"],
