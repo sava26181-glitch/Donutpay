@@ -233,7 +233,7 @@ fetch("/api/site-config").then(r => r.json()).then(c => { SITE_CFG = c; const f 
 function ftHtml() {
   const c = SITE_CFG, ins = (k, t) => `<a onclick="go('/legal/${k}')">${t}</a>`;
   const tg = c.channel ? `<a class="ftsb" href="${esc(c.channel)}" target="_blank" rel="noopener" aria-label="Telegram-канал"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21.9 4.3c.3-1.2-.9-2.2-2-1.7L2.6 9.9c-1.2.5-1.1 2.2.1 2.6l4.4 1.4 1.7 5.3c.3 1 1.5 1.3 2.3.6l2.5-2.3 4.5 3.3c.8.6 2 .1 2.2-.9l2.6-15.6zM9 13.7l8.8-5.5c.2-.1.4.2.2.3l-7.2 6.7-.3 3.2L9 13.7z"/></svg></a>` : "";
-  return `<div class="ft2"><div class="ft2c">© 2026 DonutPay${c.inn ? `<span>ИНН ${esc(c.inn)}</span>` : ""}</div><nav class="ft2l">${ins("privacy", "Политика конфиденциальности")}${ins("terms", "Пользовательское соглашение")}${ins("rules", "Правила маркетплейса")}${ins("buyer-rules", "Правила покупателей")}${ins("seller-rules", "Правила продавцов")}${ins("contacts", "Контакты")}</nav>${tg ? `<div class="ft2s">${tg}</div>` : ""}</div>`;
+  return `<div class="ft2">${tg ? `<div class="ft2s">${tg}</div>` : ""}<nav class="ft2l">${ins("privacy", "Политика конфиденциальности")}${ins("terms", "Пользовательское соглашение")}${ins("rules", "Правила маркетплейса")}${ins("buyer-rules", "Правила покупателей")}${ins("seller-rules", "Правила продавцов")}${ins("contacts", "Контакты")}</nav><div class="ft2c">© 2026 DonutPay${c.inn ? `<span>ИНН ${esc(c.inn)}</span>` : ""}</div></div>`;
 }
 { const f0 = document.querySelector("#ft"); if (f0) f0.innerHTML = ftHtml() }
 window.LEGX = {

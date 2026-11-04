@@ -22,6 +22,7 @@ const tStaff = () => !!ME && ["moderator", "admin", "owner"].includes(ME.role);
 const tDate = d => new Date(d).toLocaleString("ru-RU", { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" });
 const TST = { registration: ["Набор открыт", "reg"], running: ["Идёт", "run"], finished: ["Завершён", "fin"], cancelled: ["Отменён", "can"] };
 const tPill = s => `<span class="tpil ${TST[s][1]}">${TST[s][0]}</span>`;
+const TGAMES = ["Brawl Stars", "Standoff 2", "CS2", "Fortnite", "Dota 2", "Clash Royale", "Valorant", "League of Legends", "Rocket League", "PUBG Mobile", "Mobile Legends", "Apex Legends", "Minecraft (PvP)", "Chess.com/Lichess", "EA FC"];
 const tRub = n => Number(n).toLocaleString("ru-RU", { maximumFractionDigits: 2 }) + " ₽";
 const tFmt = f => f === "double" ? "Double elimination" : "Single elimination";
 const tCard = t => {
@@ -36,8 +37,8 @@ const tCard = t => {
     const h = await _home();
     let ts = [], gs = []; try { [ts, gs] = await Promise.all([api("/tournaments?limit=8"), api("/games").catch(() => [])]) } catch { }
     const live = ts.filter(t => t.status === "running" || t.status === "registration").slice(0, 3);
-    const gl = (gs || []).slice(0, 15);
-    const games = gl.length ? `<div class="tgames"><small class="m">Турниры по играм</small><div class="tgl">${gl.map(g => `<a onclick="go('/tournaments?game=${encodeURIComponent(g.name)}')"><i>${esc(g.name.trim()[0] || "?").toUpperCase()}</i><span>${esc(g.name)}</span></a>`).join("")}</div></div>` : "";
+    const gl = TGAMES;
+    const games = `<div class="tgames"><small class="m">Турниры по играм</small><div class="tgl">${gl.map(g => `<a onclick="go('/tournaments?game=${encodeURIComponent(g)}')"><i>${esc(g.trim()[0]).toUpperCase()}</i><span>${esc(g)}</span></a>`).join("")}</div></div>`;
     const block = `<div class="tqh"><div class="row bet"><h2 class="h2i">${ic4("trophy", 20)}Турниры</h2><a class="lk" onclick="go('/tournaments')">Все турниры</a></div>${live.length ? `<div class="tgrid">${live.map(tCard).join("")}</div>` : `<div class="card m tnone">Ближайших турниров пока нет. Выберите игру ниже: откроются её турниры.</div>`}${games}</div>`;
     const key = '<div class="row bet" style="margin-top:var(--gap)">';
     return h.includes(key) ? h.replace(key, block + key) : h + block;
@@ -50,7 +51,7 @@ window.tournamentsPage = async function (id) { return id ? tView(id) : tList() }
 
 async function tList() {
   const game = new URLSearchParams(location.hash.split("?")[1] || "").get("game") || "";
-  const ts = (await api("/tournaments?limit=60")).filter(t => !game || t.game_name === game), by = s => ts.filter(t => t.status === s);
+  const ts = (await api("/tournaments?limit=60")).filter(t => !game || t.game_name.trim().toLowerCase() === game.trim().toLowerCase()), by = s => ts.filter(t => t.status === s);
   const sec = (h, a, e) => `<div class="tsh"><h3>${h}</h3><span class="tcnt">${a.length}</span></div>${a.length ? `<div class="tgrid">${a.map(tCard).join("")}</div>` : `<div class="tempty">${e}</div>`}`;
   return `<div class="thero"><span class="thi">${ic4("trophy", 26)}</span><div class="thb"><h2>${game ? "Турниры: " + esc(game) : "Турниры"}</h2><p>${game ? `<a class="lk" onclick="go('/tournaments')">Показать все игры</a>` : "Сетка на выбывание: записывайтесь, играйте матчи и вводите результат. Победитель проходит дальше."}</p></div>${tStaff() ? '<button class="btn sm pri" onclick="tForm()">Создать турнир</button>' : ""}</div><div class="tst"><div><b>${by("running").length}</b><span>идут сейчас</span></div><div><b>${by("registration").length}</b><span>набор открыт</span></div><div><b>${by("finished").length}</b><span>завершено</span></div></div>${TRULES}${sec("Идут сейчас", by("running"), "Сейчас нет идущих турниров.")}${sec("Набор открыт", by("registration"), "Открытых турниров пока нет.")}${sec("Завершённые", by("finished"), "Завершённых турниров пока нет.")}`;
 }

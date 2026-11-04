@@ -83,6 +83,9 @@
     if (u) api("/me/balance").then(r => { const e = $("#umbal"); if (e) e.textContent = Number(r.balance).toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " ₽" }).catch(() => { });
   };
 
+  // v52: метка страницы на body, чтобы настраивать вид для ПК
+  const pgMark = () => { try { document.body.dataset.pg = location.hash.split("?")[0] || "#/" } catch { } };
+  window.addEventListener("hashchange", pgMark); pgMark();
   // v46: «онлайн» — страница раз в 30 секунд сообщает, что человек здесь (только пока вкладка открыта и видна)
   const beat = () => { if (typeof ME !== "undefined" && ME && document.visibilityState === "visible") api("/presence/ping", { method: "POST" }).catch(() => { }) };
   setInterval(beat, 30000);

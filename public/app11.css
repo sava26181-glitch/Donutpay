@@ -91,3 +91,22 @@
 .abm{width:100%;margin-top:10px}
 @media(max-width:480px){.abt{grid-template-columns:1fr 1fr}.abt .abc:last-child{grid-column:1/-1}}
 .tfs .hint{font-size:12.5px;line-height:1.4;color:var(--m)}
+.tgl{flex-wrap:nowrap;overflow-x:auto;scroll-snap-type:x proximity;padding-bottom:8px;margin-right:-16px;padding-right:16px;scrollbar-width:thin}
+.tgl a{flex:none;white-space:nowrap;scroll-snap-align:start}
+.ft2c{padding-top:2px}
+
+/* v52: компьютер */
+@media(min-width:781px){
+  .ft2{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:14px 28px}
+  .ft2l{flex:1 1 auto;justify-content:center}
+  .ft2c{flex:none;white-space:nowrap}
+  .tqh .tgrid{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .tgl{margin-right:0;padding-right:0}
+}
+@media(min-width:1000px){
+  body[data-pg*="catalog"] .rows{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-left:0;margin-right:0}
+  body[data-pg*="catalog"] .rows>*{margin:0}
+  .tgrid{gap:14px}
+  .promo{padding:36px 32px}
+  .au{margin-top:24px}
+}
