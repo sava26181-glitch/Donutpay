@@ -37,5 +37,7 @@ services:
         sync: false
       - key: OPERATOR_INFO
         sync: false
+      - key: SMSRU_API_ID
+        sync: false
       - key: OPERATOR_INN
         value: "861103156153"

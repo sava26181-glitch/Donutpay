@@ -139,6 +139,7 @@ export default function routes8(app, { q, pool, tx, E, wrap, need, hooks, pushUs
   // ---- автопроверка лотов: ранее «на модерации» лоты без запрещённых слов публикуются, помеченные остаются у модератора
   (async () => {
     try {
+      if (hooks.premod?.()) return; // предмодерация включена: публикует только модератор, перезапуск сервера ничего не публикует
       const rows = await q("select id,title,summary,details,attrs from listings where status='pending'");
       let ok = 0;
       for (const l of rows) { const f = wf(l.title, l.summary, l.details, Object.values(l.attrs || {})); if (f) await q("update listings set mod_reason=coalesce(mod_reason,$2) where id=$1", [l.id, "Автопроверка: " + f]); else { await q("update listings set status='active' where id=$1", [l.id]); ok++; } }

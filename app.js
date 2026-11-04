@@ -48,6 +48,8 @@ await step("schema_v19.sql", SCHEMA["schema_v19.sql"]);
 await step("schema_v20.sql", SCHEMA["schema_v20.sql"]);
 await step("schema_v21.sql", SCHEMA["schema_v21.sql"]);
 await step("schema_v22.sql", SCHEMA["schema_v22.sql"]);
+await step("schema_v23.sql", SCHEMA["schema_v23.sql"]);
+await step("schema_v24.sql", SCHEMA["schema_v24.sql"]);
 };
 try { await runSchema(); if (await grantOwner(process.env["OWNER_EMAIL"])) console.log("[owner] роль owner выдана:", process.env["OWNER_EMAIL"]); globalThis.__boot = "запуск сервера"; }
 catch (e) {
@@ -61,8 +63,12 @@ app.use(express.json({ limit: "50kb" })); app.use(cookieParser());
 app.get("/health", (_, r) => r.send("ok"));
 const wrap = f => (req, res, next) => Promise.resolve(f(req, res, next)).catch(next);
 const fpSeen = new Map();
+// v46: «онлайн» = человек недавно присылал сигнал активности (страница открыта и видна) или совершал действие
+const activeAt = new Map(), ONLINE_MS = 75000;
+setInterval(() => { const lim = Date.now() - 10 * 60e3; for (const [k, t] of activeAt) if (t < lim) activeAt.delete(k); }, 5 * 60e3).unref?.();
 app.use((req, _r, next) => {
   try { req.user = jwt.verify(req.cookies.t, JWT_SECRET); } catch {}
+  if (req.user && req.method !== "GET" && req.method !== "HEAD" && req.method !== "OPTIONS" && req.path !== "/api/presence/off") activeAt.set(req.user.id, Date.now());
   // отпечатки для защиты дуэлей от накрутки: храним только хэши сети и устройства
   if (req.user && req.path.startsWith("/api/")) {
     const ip = String(req.ip || ""), dev = String(req.headers["x-device"] || "").slice(0, 64), h = v => crypto.createHash("sha256").update(JWT_SECRET + "|" + v).digest("hex").slice(0, 32);
@@ -77,6 +83,18 @@ const setCookie = (res, id) => res.cookie("t", jwt.sign({ id }, JWT_SECRET, { ex
 const lim = rateLimit({ windowMs: 15 * 60e3, limit: 30 });
 const U = "id,public_id,username,email,role,is_seller,avatar_url,bio,seller_verified,avatar_media,cover_media,theme";
 const hooks = {}, B = makeBadges(q);
+// v44: лот ушёл на проверку: уведомление модераторам на сайте (колокольчик) и в Telegram-боте администратора
+hooks.premod = () => process.env["PREMODERATE_LISTINGS"] !== "false";
+hooks.modNotify = async (id, title, reason) => {
+  try {
+    const us = await q("select id from users where role in ('moderator','admin','owner')");
+    for (const u of us) {
+      const [n] = await q("insert into notifications(user_id,type,payload) values($1,'listing_review',$2) returning id,payload", [u.id, { listing_id: id, title: String(title || "").slice(0, 80), reason: reason || null }]);
+      pushUser(u.id, "notify", { id: n.id, type: "listing_review", ...n.payload });
+    }
+  } catch (e) { console.error("[mod] notify", e.message); }
+  try { r2.notifyStaff?.("Лот на проверку" + (reason ? " (" + reason + ")" : "") + ": " + String(title || "").slice(0, 80)); } catch { }
+};
 const r2 = routes2(app, { q, pool, tx, E, wrap, need, online, B, hooks });
 const r3 = routes3(app, { q, pool, tx, E, wrap, need, pushUser, hooks });
 
@@ -113,7 +131,7 @@ app.post("/api/auth/login", lim, wrap(async (req, res) => {
   }
   setCookie(res, u.id); const { password_hash, totp_secret, totp_backup, totp_enabled, totp_last_step, ...pub } = u; res.json(pub);
 }));
-app.post("/api/auth/logout", (req, res) => { if (req.user) { subs.get(req.user.id)?.forEach(r => r.end()); subs.delete(req.user.id); lastSeen.delete(req.user.id); } res.setHeader("Cache-Control", "no-store"); res.cookie("t", "", { httpOnly: true, sameSite: "lax", secure: prod, path: "/", maxAge: 0, expires: new Date(0) }); res.clearCookie("t", { path: "/" }).json({ ok: true }); });
+app.post("/api/auth/logout", (req, res) => { if (req.user) { subs.get(req.user.id)?.forEach(r => r.end()); subs.delete(req.user.id); lastSeen.delete(req.user.id); activeAt.delete(req.user.id); } res.setHeader("Cache-Control", "no-store"); res.cookie("t", "", { httpOnly: true, sameSite: "lax", secure: prod, path: "/", maxAge: 0, expires: new Date(0) }); res.clearCookie("t", { path: "/" }).json({ ok: true }); });
 app.get("/api/me", need, wrap(async (req, res) => { const [u] = await q(`select ${U},show_badges,blocked_until,block_reason,block_hours from users where id=$1`, [req.user.id]); u ? res.json(u) : res.status(401).json({ error: "auth required" }); }));
 app.patch("/api/me", need, wrap(async (req, res) => {
   const b = req.body || [];
@@ -162,7 +180,7 @@ const lbody = b => {
   return [b.title, (b.summary || "").slice(0, 300), (b.details || "").slice(0, 3000), price, stock, (b.delivery_time || "").slice(0, 40)];
 };
 app.post("/api/listings", need, wrap(async (req, res) => {
-  const [me] = await q("select is_seller,seller_verified from users where id=$1", [req.user.id]); if (!me?.is_seller) throw E(403, "become a seller first");
+  const [me] = await q("select is_seller,seller_verified,role from users where id=$1", [req.user.id]); if (!me?.is_seller) throw E(403, "become a seller first");
   if (process.env["REQUIRE_SELLER_VERIFICATION"] !== "false" && !me.seller_verified) throw E(403, "seller verification required");
   const [g] = await q("select id from games where slug=$1", [req.body.game]), [c] = await q("select id from categories where slug=$1", [req.body.category]);
   if (!g || !c) throw E(400, "unknown game or category");
@@ -170,10 +188,11 @@ app.post("/api/listings", need, wrap(async (req, res) => {
   const attrs = Object.fromEntries(Object.entries(req.body.attrs || {}).filter(([k, v]) => /^[a-z_]{1,30}$/.test(k) && !/pass|pwd|token|secret|key/i.test(k) && ["string", "number"].includes(typeof v)).slice(0, 12).map(([k, v]) => [k, String(v).slice(0, 200)]));
   let img = null; if (req.body.image) { const [m] = await q("select id from media where id=$1 and owner_id=$2 and kind='listing'", [req.body.image, req.user.id]); if (!m) throw E(400, "bad image"); img = m.id; }
   const flag = wf(req.body.title, req.body.summary, req.body.details, Object.values(attrs));
-  const ins = () => q("insert into listings(seller_id,game_id,category_id,title,summary,details,price_cents,stock,delivery_time,status,attrs,image_media,after_msg,allow_group,deactivate_on_sale) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$15,$10,$11,$12,$13,$14) returning id,status", [req.user.id, g.id, c.id, ...lbody(req.body), attrs, img, String(req.body.after_msg || "").slice(0, 2000), req.body.allow_group === true, req.body.deactivate_on_sale === true, flag ? "pending" : "active"]);
+  const hold = flag ? "Автопроверка: " + flag : (hooks.premod() && !["moderator", "admin", "owner"].includes(me.role) ? "Новый лот: ожидает проверки модератором" : null);
+  const ins = () => q("insert into listings(seller_id,game_id,category_id,title,summary,details,price_cents,stock,delivery_time,status,attrs,image_media,after_msg,allow_group,deactivate_on_sale) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$15,$10,$11,$12,$13,$14) returning id,status", [req.user.id, g.id, c.id, ...lbody(req.body), attrs, img, String(req.body.after_msg || "").slice(0, 2000), req.body.allow_group === true, req.body.deactivate_on_sale === true, hold ? "pending" : "active"]);
   let l; try { [l] = await ins(); } catch (e) { if (e.code !== "42703") throw e; await pool.query("alter table listings add column if not exists after_msg text"); [l] = await ins(); }
   const ai = hooks.autoClean(req.body.auto_items); if (ai) await q("update listings set auto_items=$2,auto_delivery=true,stock=$3 where id=$1", [l.id, ai, ai.length]);
-  if (flag) { await q("update listings set mod_reason=$2 where id=$1", [l.id, "Автопроверка: " + flag]).catch(() => {}); r2.notifyStaff?.("Лот на проверку (" + flag + "): " + String(req.body.title).slice(0, 80)); }
+  if (hold) { await q("update listings set mod_reason=$2 where id=$1", [l.id, hold]).catch(() => {}); hooks.modNotify(l.id, req.body.title, flag ? flag : "новый"); }
   res.status(201).json(l);
 }));
 app.patch("/api/listings/:id", need, wrap(async (req, res) => {
@@ -226,7 +245,9 @@ app.post("/api/payments/webhook", (_, res) => res.status(501).json({ error: "pay
 // ---- chat (+ SSE для обновления без перезагрузки)
 const subs = new Map(), lastSeen = new Map();
 function pushUser(uid, ev, d) { subs.get(uid)?.forEach(r => r.write(`event: ${ev}\ndata: ${JSON.stringify(d)}\n\n`)); }
-function online(uid) { const s = subs.get(uid); return !!(s && s.size) || (lastSeen.get(uid) || 0) > Date.now() - 20000; }
+function online(uid) { return (activeAt.get(uid) || 0) > Date.now() - ONLINE_MS; }
+app.post("/api/presence/ping", need, (req, res) => { activeAt.set(req.user.id, Date.now()); res.json({ ok: true }); });
+app.post("/api/presence/off", need, (req, res) => { activeAt.delete(req.user.id); pool.query("update users set last_seen=now() where id=$1", [req.user.id]).catch(() => { }); res.json({ ok: true }); });
 app.get("/api/stream", need, (req, res) => {
   res.set({ "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" }); res.flushHeaders();
   const s = subs.get(req.user.id) || new Set(); s.add(res); subs.set(req.user.id, s);

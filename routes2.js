@@ -7,7 +7,7 @@ export default function routes2(app, { q, pool, tx, E, wrap, need, online, B, ho
   const cfg = !!(BOT && BN && WS), ST = ["moderator", "admin", "owner"], AD = ["admin", "owner"];
   const audit = (a, act, tt, tid, d) => q("insert into audit_log(actor_id,action,target_type,target_id,details) values($1,$2,$3,$4,$5)", [a, act, tt, String(tid ?? ""), d || {}]);
   const staff = (...r) => wrap(async (req, _res, next) => { const [u] = await q("select role from users where id=$1", [req.user.id]); if (!u || !r.includes(u.role)) throw E(403, "forbidden"); req.role = u.role; next(); });
-  const tgCall = async (tok, m, b) => { try { const r = await fetch(`${TGAPI}/bot${tok}/${m}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(b) }); const d = await r.json().catch(() => ({})); if (!d.ok) console.error(`[telegram] ${m} failed:`, d.error_code, d.description); return !!d.ok; } catch (e) { console.error(`[telegram] ${m} error:`, e.message); return false; } };
+  const tgCall = async (tok, m, b) => { try { const r = await fetch(`${TGAPI}/bot${tok}/${m}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(b), signal: AbortSignal.timeout(8000) }); const d = await r.json().catch(() => ({})); if (!d.ok) console.error(`[telegram] ${m} failed:`, d.error_code, d.description); return !!d.ok; } catch (e) { console.error(`[telegram] ${m} error:`, e.message); return false; } };
   const tg = (m, b) => tgCall(BOT, m, b);
   // заблокированные не могут выполнять действия
   const blkC = new Map(); app.use("/api", wrap(async (req, _res, next) => { if (req.user && req.method !== "GET") { let u = blkC.get(req.user.id); if (!u || Date.now() - u.t > 10000) { const [r] = await q("select blocked_until from users where id=$1", [req.user.id]); u = { t: Date.now(), blocked_until: r?.blocked_until }; if (blkC.size > 5000) blkC.clear(); blkC.set(req.user.id, u); } if (u?.blocked_until && new Date(u.blocked_until) > new Date()) throw E(403, "account blocked"); } next(); }));
@@ -95,14 +95,18 @@ export default function routes2(app, { q, pool, tx, E, wrap, need, online, B, ho
   }));
   app.post("/api/me/telegram/unlink", need, wrap(async (req, res) => { await q("update users set telegram_id=null where id=$1 and not seller_verified", [req.user.id]); const [u] = await q("select telegram_id from users where id=$1", [req.user.id]); res.json({ ok: true, linked: !!u?.telegram_id }); }));
   const notifyVerif = (ach, text) => { if (ach) say(ach, text); notifyStaff(text); };
-  const say = (id, text, extra) => tg("sendMessage", { chat_id: id, text, ...extra });
+  const sayNet = (id, text, extra) => tg("sendMessage", { chat_id: id, text, ...extra });
+  const say = sayNet;
   hooks.tgSend = (id, text) => BOT ? say(id, text) : Promise.resolve();
   app.post("/api/telegram/webhook", async (req, res) => {
     if (!cfg || req.get("x-telegram-bot-api-secret-token") !== WS) return res.sendStatus(403);
-    res.sendStatus(200);
-    try { await verifyHook(req); } catch (e) { console.error("[telegram:verify] handler error:", e.message); const f = req.body?.message?.from?.id; if (f) say(f, "Произошла ошибка на сервере DonutPay. Попробуйте ещё раз позже."); }
+    // Ответ пользователю отправляется прямо в ответе на webhook (без исходящих запросов к api.telegram.org).
+    const hold = {};
+    try { await verifyHook(req, hold); } catch (e) { console.error("[telegram:verify] handler error:", e.message); const f = req.body?.message?.from?.id; if (f && !hold.r) hold.r = { method: "sendMessage", chat_id: f, text: "Произошла ошибка на сервере DonutPay. Попробуйте ещё раз позже." }; }
+    if (hold.r) res.json(hold.r); else res.sendStatus(200);
   });
-  const verifyHook = async req => { const res = { sendStatus() {} };
+  const verifyHook = async (req, hold) => { const res = { sendStatus() {} };
+    const say = (id, text, extra) => hold && !hold.r ? (hold.r = { method: "sendMessage", chat_id: id, text, ...extra }, Promise.resolve(true)) : sayNet(id, text, extra);
     if (!cfg || req.get("x-telegram-bot-api-secret-token") !== WS) return res.sendStatus(403); res.sendStatus(200);
     const m = req.body?.message; if (!m || m.chat?.type !== "private") return; const from = m.from.id;
     console.log("[telegram:verify] update:", m.contact ? "contact" : String(m.text || "").split(" ")[0].slice(0, 12));
@@ -136,7 +140,7 @@ export default function routes2(app, { q, pool, tx, E, wrap, need, online, B, ho
       const rm = { reply_markup: { remove_keyboard: true } };
       if (!r) return say(from, "Нет активной верификации или время истекло. Начните заново на сайте.", rm);
       if (r === "taken") return say(from, "Этот Telegram уже привязан к другому аккаунту DonutPay.", rm);
-      await say(from, "Контакт получен.", rm); await say(from, "Готово. Вернитесь на сайт DonutPay: вы можете создавать объявления.", (SITE || base) ? { reply_markup: { inline_keyboard: [[{ text: "Вернуться на DonutPay", url: (SITE || base) + "/#/sell" }]] } } : undefined);
+      say(from, "Готово, контакт получен. Вернитесь на сайт DonutPay: вы можете создавать объявления.", (SITE || base) ? { reply_markup: { inline_keyboard: [[{ text: "Вернуться на DonutPay", url: (SITE || base) + "/#/sell" }]] } } : rm);
       notifyVerif(ACH, `Новая верификация продавца: ${r}\nTelegram ID: ${from}\nТелефон: ***${last4}`);
     }
   };
@@ -149,12 +153,18 @@ export default function routes2(app, { q, pool, tx, E, wrap, need, online, B, ho
     const [l] = await q("select * from listings where id=$1 and (seller_id=$2 or exists(select 1 from users x where x.id=$2 and x.role in ('admin','owner')))", [req.params.id, req.user.id]); if (!l) throw E(404, "not found");
     let cat = l.category_id; if (b.category) { const [c] = await q("select id from categories where slug=$1", [b.category]); if (!c) throw E(400, "unknown category"); cat = c.id; }
     let img = l.image_media; if (b.image === null) img = null; else if (b.image) { const [m] = await q("select id from media where id=$1 and owner_id=$2 and kind='listing'", [b.image, req.user.id]); if (!m) throw E(400, "bad image"); img = m.id; }
-    const flag = b.status === "archived" ? null : wf(b.title, b.summary, b.details, Object.values(cleanAttrs(b.attrs))), st = b.status === "archived" ? "archived" : (flag ? "pending" : "active");
+    const flag = b.status === "archived" ? null : wf(b.title, b.summary, b.details, Object.values(cleanAttrs(b.attrs)));
+    // v44: после правки текста лот снова проверяет модератор (для продавца); цена и количество проверки не требуют
+    const [ed] = await q("select role from users where id=$1", [req.user.id]), isStaffEd = ["moderator", "admin", "owner"].includes(ed?.role);
+    const textChanged = String(b.title) !== l.title || String(b.summary || "") !== String(l.summary || "") || String(b.details || "") !== String(l.details || "");
+    const recheck = b.status !== "archived" && !isStaffEd && hooks.premod?.() && (textChanged || ["pending", "rejected"].includes(l.status) || (l.status === "archived" && l.mod_reason));
+    const hold = flag ? "Автопроверка: " + flag : (recheck ? "Лот изменён: ожидает проверки модератором" : null);
+    const st = b.status === "archived" ? "archived" : (hold ? "pending" : "active");
     const [gm] = await q("select count(*)::int n, (count(*) filter (where category_id=$2))::int ok from game_categories where game_id=$1", [l.game_id, cat]); if (gm.n > 0 && gm.ok === 0) throw E(400, "category not available for this game");
     let aItems = l.auto_items, aOn = l.auto_delivery, stock2 = stock; if (aOn && aItems) stock2 = aItems.length;
     if (b.auto_items !== undefined) { const ai = hooks.autoClean(b.auto_items); if (ai) { aItems = ai; aOn = true; stock2 = ai.length } else { aItems = null; aOn = false } }
-    await q("update listings set auto_items=$15,auto_delivery=$16,title=$2,summary=$3,details=$4,price_cents=$5,stock=$6,delivery_time=$7,category_id=$8,attrs=$9,image_media=$10,status=$11,after_msg=$12,allow_group=$13,deactivate_on_sale=$14,mod_reason=$17,updated_at=now() where id=$1", [l.id, b.title, String(b.summary || "").slice(0, 300), String(b.details || "").slice(0, 3000), price, stock2, String(b.delivery_time || "").slice(0, 40), cat, cleanAttrs(b.attrs), img, st, String(b.after_msg || "").slice(0, 2000), b.allow_group === true, b.deactivate_on_sale === true, aItems, aOn, flag ? "Автопроверка: " + flag : null]);
-    if (flag) notifyStaff("Лот на проверку (" + flag + "): " + String(b.title).slice(0, 80));
+    await q("update listings set auto_items=$15,auto_delivery=$16,title=$2,summary=$3,details=$4,price_cents=$5,stock=$6,delivery_time=$7,category_id=$8,attrs=$9,image_media=$10,status=$11,after_msg=$12,allow_group=$13,deactivate_on_sale=$14,mod_reason=$17,updated_at=now() where id=$1", [l.id, b.title, String(b.summary || "").slice(0, 300), String(b.details || "").slice(0, 3000), price, stock2, String(b.delivery_time || "").slice(0, 40), cat, cleanAttrs(b.attrs), img, st, String(b.after_msg || "").slice(0, 2000), b.allow_group === true, b.deactivate_on_sale === true, aItems, aOn, hold]);
+    if (hold && l.status !== "pending") hooks.modNotify?.(l.id, b.title, flag ? flag : "изменён");
     hooks.priceChanged?.(l.id); res.json({ id: l.id, status: st });
   }));
 
@@ -217,9 +227,9 @@ export default function routes2(app, { q, pool, tx, E, wrap, need, online, B, ho
   };
 
   const base = (env.SITE_URL || env.RENDER_EXTERNAL_URL || "").replace(/\/$/, "");
-  const setHook = async (token, path, secret, label) => { try { const r = await fetch(`${TGAPI}/bot${token}/setWebhook`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: base + path, secret_token: secret, allowed_updates: ["message"] }) }); const d = await r.json(); console.log(`[telegram:${label}] setWebhook ->`, d.ok ? "ok" : d.description); return d; } catch (e) { console.error(`[telegram:${label}] setWebhook error:`, e.message); } };
+  const setHook = async (token, path, secret, label) => { try { const r = await fetch(`${TGAPI}/bot${token}/setWebhook`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ url: base + path, secret_token: secret, allowed_updates: ["message"] }), signal: AbortSignal.timeout(8000) }); const d = await r.json(); console.log(`[telegram:${label}] setWebhook ->`, d.ok ? "ok" : d.description); return d; } catch (e) { console.error(`[telegram:${label}] setWebhook error:`, e.message); } };
   if (base.startsWith("https://")) { if (cfg) setHook(BOT, "/api/telegram/webhook", WS, "verify"); if (abOK) setHook(AB, "/api/admin-bot/webhook", ABS, "admin"); } else if (cfg || abOK) console.warn("[telegram] нет https SITE_URL/RENDER_EXTERNAL_URL: webhook не зарегистрирован");
-  const tgInfo = async (token, uname, path) => { if (!token) return { configured: false }; try { const [me, wh] = await Promise.all([fetch(`${TGAPI}/bot${token}/getMe`).then(r => r.json()), fetch(`${TGAPI}/bot${token}/getWebhookInfo`).then(r => r.json())]); return { configured: true, token_valid: !!me.ok, bot_username: me.result?.username || null, username_matches: me.ok ? me.result.username.toLowerCase() === String(uname || "").toLowerCase() : null, webhook_url: wh.result?.url || "", expected_url: base + path, webhook_ok: !!wh.result?.url && wh.result.url === base + path, pending_updates: wh.result?.pending_update_count ?? null, last_error: wh.result?.last_error_message || null }; } catch (e) { return { configured: true, error: e.message }; } };
+  const tgInfo = async (token, uname, path) => { if (!token) return { configured: false }; try { const [me, wh] = await Promise.all([fetch(`${TGAPI}/bot${token}/getMe`, { signal: AbortSignal.timeout(8000) }).then(r => r.json()), fetch(`${TGAPI}/bot${token}/getWebhookInfo`, { signal: AbortSignal.timeout(8000) }).then(r => r.json())]); return { configured: true, token_valid: !!me.ok, bot_username: me.result?.username || null, username_matches: me.ok ? me.result.username.toLowerCase() === String(uname || "").toLowerCase() : null, webhook_url: wh.result?.url || "", expected_url: base + path, webhook_ok: !!wh.result?.url && wh.result.url === base + path, pending_updates: wh.result?.pending_update_count ?? null, last_error: wh.result?.last_error_message || null }; } catch (e) { return { configured: true, error: e.message }; } };
   app.get("/api/admin/telegram", need, staff(...AD), wrap(async (_req, res) => res.json({ site_url: base || null, verify_bot: await tgInfo(BOT, BN, "/api/telegram/webhook"), admin_bot: await tgInfo(AB, ABN, "/api/admin-bot/webhook"), storage: { configured: stor.on, host: stor.url ? new URL(stor.url).host : null, service_key_set: !!env.SUPABASE_SERVICE_ROLE_KEY } })));
   app.post("/api/admin/telegram/webhook", need, staff(...AD), wrap(async (req, res) => { if (!base.startsWith("https://")) throw E(400, "SITE_URL must be https"); const out = {}; if (cfg) out.verify = !!(await setHook(BOT, "/api/telegram/webhook", WS, "verify"))?.ok; if (abOK) out.admin = !!(await setHook(AB, "/api/admin-bot/webhook", ABS, "admin"))?.ok; await audit(req.user.id, "telegram_webhook_set", "system", "telegram", out); res.json(out); }));
   app.post("/api/admin/storage/test", need, staff(...AD), wrap(async (_req, res) => {
