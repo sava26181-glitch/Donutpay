@@ -117,7 +117,7 @@
 #gl{padding-right:24px!important}
 @media(min-width:781px){.ai{display:none!important}#gl{padding-right:0!important}}
 /* перетаскивание в редакторе профиля */
-#pvw [data-drag]{touch-action:none;cursor:grab;outline:1px dashed color-mix(in srgb,var(--pl) 75%,transparent);outline-offset:3px;user-select:none;-webkit-user-select:none}
+#pvw [data-drag]{touch-action:none;cursor:grab;outline:0;user-select:none;-webkit-user-select:none}
 /* чат в оформлении заказа крупнее */
 .scard .chm.lc{height:min(62vh,540px);min-height:340px}
 /* чат на телефоне: без сдвига страницы, шапка и нижнее меню на месте */

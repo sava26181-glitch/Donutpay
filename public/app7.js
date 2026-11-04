@@ -246,7 +246,7 @@
     try { await api("/me/badges", { method: "PATCH", body: { show: on } }); if (ME) ME.show_badges = on; const c = document.getElementById("bds"); if (c) c.outerHTML = bdCard(); toast(on ? "Ачивки показаны в профиле" : "Ачивки скрыты") } catch (e) { toast(e.message || "Не удалось сохранить") }
   };
   const bdCard = () => `<div class="card" id="bds" style="margin-top:12px"><b>Ачивки в профиле</b><p class="m" style="margin:4px 0 10px">Ачивки показываются только на вашей странице профиля, в лотах их нет. Можно скрыть.</p><div class="kbopt"><button type="button" class="${ME && ME.show_badges !== false ? "on" : ""}" onclick="bdSet(true)"><b>Показывать</b><small>Видны всем в профиле</small></button><button type="button" class="${ME && ME.show_badges === false ? "on" : ""}" onclick="bdSet(false)"><b>Скрыть</b><small>Видите только вы</small></button></div></div>`;
-  function setCards() { const st = document.getElementById("stc"); if (!st || document.getElementById("kbs")) return; st.insertAdjacentHTML("afterend", kbCard() + (ME ? bdCard() : "")) }
+  function setCards() { const st = document.getElementById("stc"); if (!st || document.getElementById("kbs")) return; st.insertAdjacentHTML("afterend", kbCard()) }
 
   // ======================= Хуки маршрутов =======================
   const ar = window.afterRoute;

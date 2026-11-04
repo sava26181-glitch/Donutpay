@@ -128,3 +128,31 @@
 .tgt b{font-size:12.5px;font-weight:600;line-height:1.25;color:var(--t);overflow-wrap:anywhere}
 .tgnone{padding:12px 0}
 @media(min-width:781px){.tgl .tgt{width:104px}.tgt .tga{width:88px;height:88px;border-radius:22px}.tqf{max-width:420px}.tqs{justify-content:flex-start}}
+/* v57: страница игры, форма турнира, участники */
+.tga.tgh,.tgfix .tga{position:relative;display:grid;place-items:center;flex:none;width:64px;height:64px;border-radius:18px;overflow:hidden;color:#fff;background:linear-gradient(145deg,hsl(var(--h) 70% 45%),hsl(calc(var(--h) + 30) 60% 22%));border:1px solid color-mix(in srgb,hsl(var(--h) 80% 60%) 45%,transparent)}
+.tga.tgh svg{width:30px;height:30px}.tga.tgh img,.tgfix .tga img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.thero:has(.tgh){align-items:center}
+.tgl.tgl-all{flex-wrap:wrap;overflow:visible;margin-right:0;padding-right:0;gap:18px 10px}
+.tgl.tgl-all .tgt{width:calc(25% - 8px)}
+@media(min-width:781px){.tgl.tgl-all .tgt{width:112px}}
+.tgfix{display:flex;align-items:center;gap:12px;padding:2px 0 4px}.tgfix .tga{width:48px;height:48px;border-radius:14px}.tgfix small{display:block;color:var(--m);font-size:12px}.tgfix b{font-size:16px}
+.tprz{display:grid;gap:6px;margin:8px 0 2px}.tprz div{display:flex;align-items:center;gap:10px;padding:8px 12px;border:1px solid var(--b);border-radius:12px;background:var(--c2,var(--c))}
+.tprz i{flex:none;display:grid;place-items:center;width:26px;height:26px;border-radius:50%;background:color-mix(in srgb,var(--p) 25%,var(--c3));color:var(--pl);font-style:normal;font-weight:800;font-size:13px}.tprz span{font-size:14px;overflow-wrap:anywhere}
+.tpt{display:grid;gap:8px}.tpr{display:flex;align-items:center;gap:12px;padding:10px 12px;border:1px solid var(--b);border-radius:14px;background:var(--c)}
+.tpr.me{border-color:var(--p)}.tpr>i{flex:none;display:grid;place-items:center;min-width:28px;height:28px;border-radius:50%;background:color-mix(in srgb,var(--p) 22%,var(--c3));color:var(--pl);font-style:normal;font-weight:800;font-size:12px}
+.tpn{flex:1;min-width:0}.tpn b{display:block;overflow-wrap:anywhere}.tpn small{display:block;color:var(--m);font-size:12.5px;overflow-wrap:anywhere}
+.tpa{flex:none;max-width:38%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--pl);font-size:13px;cursor:pointer}
+@media(min-width:781px){.tpt{grid-template-columns:repeat(2,minmax(0,1fr))}}
+.rt-organizer{background:linear-gradient(90deg,#8b5cf6,#d946ef)}
+.chips a.on{color:var(--pon,#fff)!important}
+/* v57: алфавитная полоса в «Играх» без чёрной подложки, читается на любом фоне */
+@media(max-width:780px){
+  .ai{background:transparent!important;border:0!important;box-shadow:none!important;right:0!important;padding:2px 0!important}
+  .ai a{color:var(--t)!important;opacity:.62;padding:3px 8px!important;font-size:12px!important;font-weight:700}
+  .ai a.on{background:var(--p)!important;color:var(--pon,#fff)!important;opacity:1;border-radius:7px}
+  #gl{padding-right:26px!important}
+}
+.lh{color:var(--t)!important;opacity:.9}
+.lh::first-letter{color:var(--p)}
+.crown svg{fill:none!important}.crown{filter:drop-shadow(0 1px 3px rgba(251,191,36,.45))}
+#pvw [data-drag]:active{outline:0;opacity:.85}
