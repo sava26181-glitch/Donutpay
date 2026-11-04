@@ -110,3 +110,21 @@
   .promo{padding:36px 32px}
   .au{margin-top:24px}
 }
+
+/* v54: плитки игр для турниров */
+.tqs{display:flex;gap:10px;align-items:center;margin:2px 0 6px}
+.tqf{flex:1 1 auto;min-width:0;display:flex;align-items:center;gap:8px;height:44px;padding:0 14px;border:1px solid var(--b);border-radius:12px;background:var(--c)}
+.tqf:focus-within{border-color:var(--p)}.tqf svg{width:18px;height:18px;flex:none;color:var(--m)}
+.tqf input{flex:1;min-width:0;height:100%;border:0;background:none;color:var(--t);font-size:15px;outline:none;padding:0}
+.tqs .btn{flex:none;height:44px;white-space:nowrap}
+.tqc{font-size:13px;margin:0 0 10px}
+.tgames{margin-top:6px}
+.tgl .tgt{display:flex;flex-direction:column;align-items:center;gap:8px;width:92px;padding:0;border:0;border-radius:0;background:none;transform:none;white-space:normal;text-align:center}
+.tgl .tgt:hover{transform:none}
+.tgt .tga{position:relative;display:grid;place-items:center;width:76px;height:76px;border-radius:20px;overflow:hidden;color:#fff;background:linear-gradient(145deg,hsl(var(--h) 70% 45%),hsl(calc(var(--h) + 30) 60% 22%));border:1px solid color-mix(in srgb,hsl(var(--h) 80% 60%) 45%,transparent);transition:transform .15s,border-color .15s}
+.tgt .tga svg{width:34px;height:34px;opacity:.95}
+.tgt .tga img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.tgt:hover .tga,.tgt:active .tga{transform:translateY(-2px);border-color:var(--pl)}
+.tgt b{font-size:12.5px;font-weight:600;line-height:1.25;color:var(--t);overflow-wrap:anywhere}
+.tgnone{padding:12px 0}
+@media(min-width:781px){.tgl .tgt{width:104px}.tgt .tga{width:88px;height:88px;border-radius:22px}.tqf{max-width:420px}.tqs{justify-content:flex-start}}

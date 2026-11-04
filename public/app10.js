@@ -22,7 +22,14 @@ const tStaff = () => !!ME && ["moderator", "admin", "owner"].includes(ME.role);
 const tDate = d => new Date(d).toLocaleString("ru-RU", { day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" });
 const TST = { registration: ["Набор открыт", "reg"], running: ["Идёт", "run"], finished: ["Завершён", "fin"], cancelled: ["Отменён", "can"] };
 const tPill = s => `<span class="tpil ${TST[s][1]}">${TST[s][0]}</span>`;
-const TGAMES = ["Brawl Stars", "Standoff 2", "CS2", "Fortnite", "Dota 2", "Clash Royale", "Valorant", "League of Legends", "Rocket League", "PUBG Mobile", "Mobile Legends", "Apex Legends", "Minecraft (PvP)", "Chess.com/Lichess", "EA FC"];
+const TG_GL = {
+  cross: '<circle cx="12" cy="12" r="7"/><path d="M12 2v5M12 17v5M2 12h5M17 12h5"/>', crown: '<path d="M4 18h16M5 18L3 7l5 4 4-7 4 7 5-4-2 11"/>', star: '<path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9z"/>',
+  hex: '<path d="M12 2l8.5 5v10L12 22l-8.5-5V7z"/><path d="M12 8v8M8.5 10l7 4"/>', gem: '<path d="M6 4h12l4 5-10 12L2 9z"/><path d="M2 9h20M9 4l3 5 3-5M12 9v12"/>', ball: '<circle cx="12" cy="12" r="9"/><path d="M12 7l4 3-1.5 5h-5L8 10z"/>',
+  helm: '<path d="M4 14a8 8 0 0116 0v4H4z"/><path d="M4 14h16M9 18v-4"/>', sword: '<path d="M14 4l6-1-1 6-9 9-4-4z"/><path d="M5 15l-2 2 4 4 2-2M8 12l4 4"/>', tri: '<path d="M12 3l9 17H3z"/><path d="M12 10v5"/>', cube: '<path d="M12 2l9 5v10l-9 5-9-5V7z"/><path d="M12 12l9-5M12 12L3 7M12 12v10"/>', pawn: '<circle cx="12" cy="7" r="3"/><path d="M9 21h6M10 12h4l1 5H9zM8 21l1-4M16 21l-1-4"/>'
+};
+const TGAMES = [["Brawl Stars", "brawl-stars", 48, "star"], ["Standoff 2", "standoff-2", 20, "cross"], ["CS2", "cs2", 36, "cross"], ["Fortnite", "fortnite", 265, "cube"], ["Dota 2", "dota-2", 2, "hex"], ["Clash Royale", "clash-royale", 215, "crown"], ["Valorant", "valorant", 350, "cross"], ["League of Legends", "league-of-legends", 195, "gem"], ["Rocket League", "rocket-league", 205, "ball"], ["PUBG Mobile", "pubg-mobile", 40, "helm"], ["Mobile Legends", "mobile-legends", 280, "sword"], ["Apex Legends", "apex-legends", 8, "tri"], ["Minecraft (PvP)", "minecraft-pvp", 130, "cube"], ["Chess.com/Lichess", "chess", 95, "pawn"], ["EA FC", "ea-fc", 150, "ball"]];
+const tgTile = g => `<a class="tgt" data-n="${esc(g[0].toLowerCase())}" onclick="go('/tournaments?game=${encodeURIComponent(g[0])}')"><span class="tga" style="--h:${g[2]}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${TG_GL[g[3]]}</svg><img src="/img/games/${g[1]}.webp" alt="" loading="lazy" onerror="this.remove()"></span><b>${esc(g[0])}</b></a>`;
+window.tgSearch = v => { const q = String(v || "").trim().toLowerCase(); let n = 0; document.querySelectorAll(".tgl .tgt").forEach(a => { const on = !q || a.dataset.n.includes(q); a.style.display = on ? "" : "none"; if (on) n++ }); const e = document.getElementById("tgnone"); if (e) e.hidden = n > 0 };
 const tRub = n => Number(n).toLocaleString("ru-RU", { maximumFractionDigits: 2 }) + " ₽";
 const tFmt = f => f === "double" ? "Double elimination" : "Single elimination";
 const tCard = t => {
@@ -35,11 +42,11 @@ const tCard = t => {
   const _home = home;
   window.home = async function () {
     const h = await _home();
-    let ts = [], gs = []; try { [ts, gs] = await Promise.all([api("/tournaments?limit=8"), api("/games").catch(() => [])]) } catch { }
+    let ts = []; try { ts = await api("/tournaments?limit=8") } catch { }
     const live = ts.filter(t => t.status === "running" || t.status === "registration").slice(0, 3);
-    const gl = TGAMES;
-    const games = `<div class="tgames"><small class="m">Турниры по играм</small><div class="tgl">${gl.map(g => `<a onclick="go('/tournaments?game=${encodeURIComponent(g)}')"><i>${esc(g.trim()[0]).toUpperCase()}</i><span>${esc(g)}</span></a>`).join("")}</div></div>`;
-    const block = `<div class="tqh"><div class="row bet"><h2 class="h2i">${ic4("trophy", 20)}Турниры</h2><a class="lk" onclick="go('/tournaments')">Все турниры</a></div>${live.length ? `<div class="tgrid">${live.map(tCard).join("")}</div>` : `<div class="card m tnone">Ближайших турниров пока нет. Выберите игру ниже: откроются её турниры.</div>`}${games}</div>`;
+    const games = `<div class="tgames"><div class="tgl">${TGAMES.map(tgTile).join("")}</div><div class="tgnone m" id="tgnone" hidden>Такой игры нет в списке турниров.</div></div>`;
+    const ctl = `<div class="tqs"><label class="tqf"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg><input type="search" placeholder="Найти игру" oninput="tgSearch(this.value)" autocomplete="off"></label>${tStaff() ? '<button class="btn pri" onclick="tForm()">Создать турнир</button>' : ""}</div><div class="tqc m">Всего игр для турниров: ${TGAMES.length}</div>`;
+    const block = `<div class="tqh"><h2 class="h2i">${ic4("trophy", 20)}Турниры</h2>${ctl}${live.length ? `<div class="tgrid">${live.map(tCard).join("")}</div>` : ""}${games}</div>`;
     const key = '<div class="row bet" style="margin-top:var(--gap)">';
     return h.includes(key) ? h.replace(key, block + key) : h + block;
   };

@@ -33,7 +33,7 @@
   window.verify = async function () {
     need(); const v = await vstat(); window._vc = null; clearInterval(vfT);
     const head = `<div class="vfh"><span class="vfi">${SHI}</span><div><h2>Верификация продавца</h2><p>Нужна один раз, чтобы публиковать объявления.</p></div></div>`;
-    const code = `<div class="card vfcod"><b>Кодекс продавца</b><p class="m">Правила, которые продавец публично обязуется соблюдать. Подписанный кодекс обязателен для публикации лотов.</p><button class="btn" onclick="go('/code')">Открыть Кодекс продавца</button></div>`;
+    const code = "";
     if (v.verified) return `<div class="vf">${head}<div class="card vfok"><span class="vfi ok">${SHI}</span><div><b>Верификация пройдена</b><p class="m">Ваш Telegram подтверждён. Можно создавать объявления.</p></div></div><button class="btn pri vfsell" onclick="go('/sell')">Создать объявление</button>${code}</div>`;
     if (!v.configured) return `<div class="vf">${head}<div class="card"><b>Верификация временно недоступна</b><p class="m">Бот пока не настроен на сервере. Не хватает переменных окружения: ${(v.missing || []).map(x => `<code>${esc(x)}</code>`).join(", ") || "TELEGRAM_BOT_TOKEN, TELEGRAM_BOT_USERNAME, TELEGRAM_WEBHOOK_SECRET"}.</p></div></div>`;
     return `<div class="vf">${head}<div class="card vfc" id="vfb">${vfSteps()}</div><p class="vfn2">Мы сохраняем только ваш Telegram ID, чтобы один Telegram нельзя было использовать для нескольких аккаунтов. Номер телефона и переписка нам недоступны.</p>${code}</div>`;
