@@ -76,11 +76,11 @@ export default function routes8(app, { q, pool, tx, E, wrap, need, hooks, pushUs
   }));
 
   // ---- карточка заказа для персонала (участникам заказ открывается обычной страницей)
-  const staffOnly = wrap(async (req, _res, next) => { const [me] = await q("select role from users where id=$1", [req.user.id]); if (!["moderator", "admin", "owner"].includes(me?.role)) throw E(403, "forbidden"); next(); });
-  app.get("/api/admin/orders/by-number/:n", need, staffOnly, wrap(async (req, res) => {
+  const staffGate = wrap(async (req, _res, next) => { const [me] = await q("select role from users where id=$1", [req.user.id]); if (!["moderator", "admin", "owner"].includes(me?.role)) throw E(403, "forbidden"); next(); });
+  app.get("/api/admin/orders/by-number/:n", need, staffGate, wrap(async (req, res) => {
     const n = String(req.params.n || "").replace(/^#/, "").slice(0, 16); const [o] = await q("select id from orders where upper(number)=upper($1)", [n]); if (!o) throw E(404, "not found"); res.json({ id: o.id });
   }));
-  app.get("/api/admin/orders/:id", need, staffOnly, wrap(async (req, res) => {
+  app.get("/api/admin/orders/:id", need, staffGate, wrap(async (req, res) => {
     if (!uuid(req.params.id)) throw E(404, "not found");
     const [o] = await q(`select o.id,o.number,o.status,o.payment_status,o.total_cents,o.discount_cents,o.fee_cents,o.quantity,o.unit_price_cents,o.created_at,o.updated_at,o.listing_id,o.buyer_id,o.seller_id,l.title,g.name game_name,c.name category_name,bu.username buyer,su.username seller
       from orders o join listings l on l.id=o.listing_id join games g on g.id=l.game_id join categories c on c.id=l.category_id join users bu on bu.id=o.buyer_id join users su on su.id=o.seller_id where o.id=$1`, [req.params.id]);
@@ -103,9 +103,17 @@ export default function routes8(app, { q, pool, tx, E, wrap, need, hooks, pushUs
       (select count(*) from disputes where status in ('open','in_review','awaiting_info'))::int disputes,
       (select count(*) from tickets where status in ('new','in_review'))::int tickets,
       (select count(*) from orders where status='dispute')::int orders,
+      (select count(*) from reports where status='open')::int reports,
+      (select count(*) from tournaments where status='running')::int tournaments,
       ${adm ? "(select count(*) from withdrawals where status in ('pending','processing'))::int" : "0"} withdrawals`);
-    res.json(r);
+    r.total = r.listings + r.disputes + r.tickets + r.reports + r.tournaments + r.withdrawals; res.json(r);
   }));
+  // жалобы: список и закрытие (раньше жалобы нигде не показывались в интерфейсе)
+  const staffGate2 = wrap(async (req, _res, next) => { const [m] = await q("select role from users where id=$1", [req.user.id]); if (!["moderator", "admin", "owner"].includes(m?.role)) throw E(403, "forbidden"); next(); });
+  app.get("/api/admin/report-list", need, staffGate2, wrap(async (_req, res) => res.json(await q(`select r.id,r.target_type,r.target_id,r.reason,r.created_at,u.username reporter,
+      case r.target_type when 'listing' then (select title from listings where id=r.target_id) when 'user' then (select username from users where id=r.target_id) else null end target_name
+      from reports r join users u on u.id=r.reporter_id where r.status='open' order by r.created_at desc limit 100`))));
+  app.post("/api/admin/report-close/:id", need, staffGate2, wrap(async (req, res) => { await q("update reports set status='closed' where id=$1", [req.params.id]); res.json({ ok: true }); }));
 
   // ---- дуэли: кто ищет соперника и прямое присоединение
   const busyQ = "select 1 from duels d where $1 in(d.seller_a,d.seller_b) and (d.status='live' or d.starts_at>now()-interval '24 hours')";

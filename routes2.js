@@ -14,13 +14,13 @@ export default function routes2(app, { q, pool, tx, E, wrap, need, online, B, ho
 
   // ---- media (хранится в БД; проверка сигнатуры файла, а не заголовка клиента)
   const mime = b => b.length < 12 ? null : b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47 ? "image/png" : b[0] === 0xff && b[1] === 0xd8 ? "image/jpeg" : b.slice(0, 3).toString() === "GIF" ? "image/gif" : b.slice(0, 4).toString() === "RIFF" && b.slice(8, 12).toString() === "WEBP" ? "image/webp" : null;
-  const LIM = { avatar: 1e6, cover: 2e6, listing: 1e6, news: 2e6, tour: 2e6 };
-  app.post("/api/media", need, express.raw({ type: "application/octet-stream", limit: "2mb" }), wrap(async (req, res) => {
+  const LIM = { avatar: 2e6, cover: 5e6, listing: 5e6, news: 5e6, tour: 5e6 };
+  app.post("/api/media", need, express.raw({ type: "application/octet-stream", limit: "6mb" }), wrap(async (req, res) => {
     const kind = req.query.kind, b = req.body; if (!LIM[kind] || !Buffer.isBuffer(b)) throw E(400, "bad upload");
     const m = mime(b); if (!m) throw E(400, "only png, jpeg, webp, gif"); if (b.length > LIM[kind]) throw E(400, "file too large"); if (m === "image/gif" && kind !== "cover" && kind !== "news" && kind !== "tour") throw E(400, "gif only for cover");
     if (kind === "tour") { const [u] = await q("select role from users where id=$1", [req.user.id]); if (!["organizer", "moderator", "admin", "owner"].includes(u?.role)) { const [h] = await q("select 1 from tournament_helpers where user_id=$1 limit 1", [req.user.id]); if (!h) throw E(403, "forbidden"); } }
     if (kind === "news") { const [u] = await q("select role from users where id=$1", [req.user.id]); if (!["admin", "owner"].includes(u?.role)) throw E(403, "forbidden"); }
-    const [c] = await q("select count(*)::int n from media where owner_id=$1 and kind not in ('news','tour')", [req.user.id]); if (kind !== "news" && kind !== "tour" && c.n >= 40) throw E(429, "media limit reached");
+    const [c] = await q("select count(*)::int n from media where owner_id=$1 and kind not in ('news','tour')", [req.user.id]); if (kind !== "news" && kind !== "tour" && c.n >= 300) throw E(429, "media limit reached");
     const ext = { "image/png": "png", "image/jpeg": "jpg", "image/gif": "gif", "image/webp": "webp" }[m];
     if (stor.on) {
       const path = `${kind}/${req.user.id}/${crypto.randomUUID()}.${ext}`;
@@ -204,8 +204,7 @@ export default function routes2(app, { q, pool, tx, E, wrap, need, online, B, ho
   // ---- полное редактирование объявления (владелец проверяется в SQL)
   const cleanAttrs = a => Object.fromEntries(Object.entries(a || {}).filter(([k, v]) => /^[a-z_]{1,30}$/.test(k) && !/pass|pwd|token|secret|key/i.test(k) && ["string", "number"].includes(typeof v)).slice(0, 12).map(([k, v]) => [k, String(v).slice(0, 200)]));
   app.patch("/api/listings/:id", need, wrap(async (req, res) => {
-    const b = req.body || {}, price = Math.round(+b.price * 100), stock = +b.stock;
-    if (String(b.title || "").length < 5 || b.title.length > 120 || !(price > 0) || !Number.isInteger(stock) || stock < 0) throw E(400, "invalid input"); if (price > 2000000000 || stock > 1000000) throw E(400, "invalid input");
+    const b = req.body || {}; const [price, stock] = hooks.lchk(b, 0);
     const [l] = await q("select * from listings where id=$1 and (seller_id=$2 or exists(select 1 from users x where x.id=$2 and x.role in ('admin','owner')))", [req.params.id, req.user.id]); if (!l) throw E(404, "not found");
     let cat = l.category_id; if (b.category) { const [c] = await q("select id from categories where slug=$1", [b.category]); if (!c) throw E(400, "unknown category"); cat = c.id; }
     let img = l.image_media; if (b.image === null) img = null; else if (b.image) { const [m] = await q("select id from media where id=$1 and owner_id=$2 and kind='listing'", [b.image, req.user.id]); if (!m) throw E(400, "bad image"); img = m.id; }

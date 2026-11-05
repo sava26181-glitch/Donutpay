@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import express from "express"; import helmet from "helmet"; import cookieParser from "cookie-parser";
 import SCHEMA from "./schema_bundle.js"; import rateLimit from "express-rate-limit"; import { shieldEarly, shieldRules, antibot } from "./shield.js"; import bcrypt from "bcryptjs"; import jwt from "jsonwebtoken";
-import { verifyTotp, skewOf, hashBackup } from "./totp.js"; import routes9 from "./routes9.js"; import routes10 from "./routes10.js"; import routes11 from "./routes11.js";
+import { verifyTotp, skewOf, hashBackup } from "./totp.js"; import routes9 from "./routes9.js"; import routes10 from "./routes10.js"; import routes11 from "./routes11.js"; import routes12 from "./routes12.js";
 import pg from "pg"; import routes2 from "./routes2.js"; import routes3 from "./routes3.js"; import routes7 from "./routes7.js";
 import wf from "./wordfilter.js"; import routes8 from "./routes8.js"; import routes6 from "./routes6.js"; import sysmsg from "./sysmsg.js"; import routes4 from "./routes4.js"; import routes5 from "./routes5.js"; import { makeBadges } from "./badges.js"; import fs from "fs"; import path from "path"; import { fileURLToPath } from "url";
 const dir = path.dirname(fileURLToPath(import.meta.url));
@@ -56,6 +56,7 @@ await step("schema_v27.sql", SCHEMA["schema_v27.sql"]);
 await step("schema_v28.sql", SCHEMA["schema_v28.sql"]);
 await step("schema_v29.sql", SCHEMA["schema_v29.sql"]);
 await step("schema_v30.sql", SCHEMA["schema_v30.sql"]);
+await step("schema_v31.sql", SCHEMA["schema_v31.sql"]);
 };
 try { await runSchema(); if (await grantOwner(process.env["OWNER_EMAIL"])) console.log("[owner] роль owner выдана:", process.env["OWNER_EMAIL"]); globalThis.__boot = "запуск сервера"; }
 catch (e) {
@@ -64,7 +65,7 @@ catch (e) {
 }
 
 const app = express(); app.set("trust proxy", 1); app.use(shieldEarly());
-app.use(helmet({ contentSecurityPolicy: { directives: { defaultSrc: ["'self'"], styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"], fontSrc: ["'self'", "data:", "https://fonts.gstatic.com"], mediaSrc: ["'self'", "blob:", "data:", "https://*.supabase.co"], scriptSrc: ["'self'", "'unsafe-inline'", "https://challenges.cloudflare.com"], scriptSrcAttr: ["'unsafe-inline'"], imgSrc: ["'self'", "data:", "blob:", "https://*.supabase.co"], connectSrc: ["'self'", "https://challenges.cloudflare.com", "https://api.mymemory.translated.net"], frameSrc: ["https://challenges.cloudflare.com"] } } }));
+app.use(helmet({ contentSecurityPolicy: { directives: { defaultSrc: ["'self'"], styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"], fontSrc: ["'self'", "data:", "https://fonts.gstatic.com"], mediaSrc: ["'self'", "blob:", "data:", "https://*.supabase.co"], scriptSrc: ["'self'", "'unsafe-inline'", "https://challenges.cloudflare.com", "https://accounts.google.com"], scriptSrcAttr: ["'unsafe-inline'"], imgSrc: ["'self'", "data:", "blob:", "https://*.supabase.co"], connectSrc: ["'self'", "https://challenges.cloudflare.com", "https://api.mymemory.translated.net", "https://accounts.google.com"], frameSrc: ["https://challenges.cloudflare.com", "https://accounts.google.com"], styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com", "https://accounts.google.com"] } } }));
 app.use(express.json({ limit: "50kb" })); app.use(cookieParser());
 // ---- реальное время для всех: после любого успешного изменения данных все открытые страницы получают сигнал «обновись»
 const liveC = new Set(), liveT = new Map();
@@ -81,7 +82,7 @@ app.use("/api", (req, res, next) => {
     liveT.set(sc, setTimeout(() => { liveT.delete(sc); live("refresh", { s: sc }); }, 400));
   }); next();
 });
-const APP_VERSION = "v64";
+const APP_VERSION = "v66";
 app.get("/api/version", (_q, r) => { const h = f => { try { return crypto.createHash("sha1").update(fs.readFileSync(new URL(f, import.meta.url))).digest("hex").slice(0, 8); } catch { return null; } }; r.json({ version: APP_VERSION, files: { routes2: h("./routes2.js"), routes10: h("./routes10.js"), app: h("./app.js") } }); });
 const dbFp = async () => { const [d] = await q("select md5(current_database()||pg_postmaster_start_time()::text) f, now() n"); return { db: d.f.slice(0, 6), db_time: d.n }; };
 app.get("/api/diag", async (_q, r) => { try { r.json({ version: APP_VERSION, host: _q.headers["x-forwarded-host"] || _q.headers.host, server_time: new Date().toISOString(), ...(await dbFp()) }); } catch (e) { r.status(500).json({ error: "db" }); } });
@@ -160,6 +161,28 @@ app.post("/api/auth/login", lim, wrap(async (req, res) => {
   }
   setCookie(res, u.id); const { password_hash, totp_secret, totp_backup, totp_enabled, totp_last_step, ...pub } = u; res.json(pub);
 }));
+// вход и регистрация через Google (Google Identity Services): токен проверяется у Google, клиентский ID в GOOGLE_CLIENT_ID
+app.post("/api/auth/google", lim, wrap(async (req, res) => {
+  const cid = (process.env.GOOGLE_CLIENT_ID || "").trim(); if (!cid) throw E(503, "Вход через Google пока не настроен на сервере (нет GOOGLE_CLIENT_ID)");
+  const cred = String(req.body?.credential || ""); if (cred.length < 100 || cred.length > 4000) throw E(400, "Не удалось получить ответ от Google. Попробуйте ещё раз");
+  let t; try { const r = await fetch("https://oauth2.googleapis.com/tokeninfo?id_token=" + encodeURIComponent(cred), { signal: AbortSignal.timeout(8000) }); t = await r.json(); if (!r.ok) throw new Error("bad"); } catch { throw E(401, "Google не подтвердил вход. Попробуйте ещё раз"); }
+  if (t.aud !== cid || !["accounts.google.com", "https://accounts.google.com"].includes(t.iss) || !(+t.exp * 1000 > Date.now())) throw E(401, "Токен Google не подходит для этого сайта");
+  if (!(t.email_verified === true || t.email_verified === "true") || !t.email) throw E(403, "Почта в аккаунте Google не подтверждена");
+  const email = String(t.email).toLowerCase();
+  let [u] = await q("select * from users where email=$1", [email]);
+  if (u?.blocked_until && new Date(u.blocked_until) > new Date() && false) throw E(403, "blocked");
+  if (u?.totp_enabled) throw E(403, "У этого аккаунта включена двухфакторная защита. Войдите по email и паролю");
+  if (!u) {
+    const base = (email.split("@")[0].replace(/[^\w.-]/g, "").slice(0, 18) || "user").padEnd(3, "0");
+    for (let i = 0; i < 8 && !u; i++) {
+      const name = i === 0 ? base : base + Math.floor(1000 + Math.random() * 9000);
+      try { [u] = await q("insert into users(email,username,password_hash) values($1,$2,$3) returning *", [email, name, await bcrypt.hash(crypto.randomBytes(24).toString("hex"), 10)]); } catch (e) { if (e.code !== "23505") throw e; }
+    }
+    if (!u) throw E(409, "Не удалось подобрать имя пользователя, попробуйте ещё раз");
+    if (await grantOwner(email)) u.role = "owner"; try { await hooks.syncAdminTg?.(); } catch { }
+  }
+  setCookie(res, u.id); const { password_hash, totp_secret, totp_backup, totp_enabled, totp_last_step, ...pub } = u; res.json(pub);
+}));
 app.post("/api/auth/logout", (req, res) => { if (req.user) { subs.get(req.user.id)?.forEach(r => r.end()); subs.delete(req.user.id); lastSeen.delete(req.user.id); activeAt.delete(req.user.id); } res.setHeader("Cache-Control", "no-store"); res.cookie("t", "", { httpOnly: true, sameSite: "lax", secure: prod, path: "/", maxAge: 0, expires: new Date(0) }); res.clearCookie("t", { path: "/" }).json({ ok: true }); });
 app.get("/api/me", need, wrap(async (req, res) => { const [u] = await q(`select ${U},show_badges,blocked_until,block_reason,block_hours from users where id=$1`, [req.user.id]); u ? res.json(u) : res.status(401).json({ error: "auth required" }); }));
 app.patch("/api/me", need, wrap(async (req, res) => {
@@ -182,6 +205,7 @@ routes7(app, { q, pool, tx, E, wrap, need, hooks, pushUser });
 routes9(app, { q, E, wrap, need, twofaCheck });
 routes10(app, { q, tx, E, wrap, need, hooks });
 routes11(app, { q, tx, E, wrap, need });
+routes12(app, { q, E, wrap, need, hooks, online });
 routes8(app, { q, pool, tx, E, wrap, need, hooks, pushUser, online: uid => online(uid), notifyStaff: t => r2.notifyStaff?.(t) });
 app.get("/api/listings", wrap(async (req, res) => {
   const { game, category, min, max, q: s, seller, sort, offset } = req.query, w = ["l.status='active'"], p = [];
@@ -202,20 +226,28 @@ app.get("/api/listings/:id", wrap(async (req, res) => {
   if (!l) throw E(404, "not found"); res.json({ ...l, online: online(l.seller_id), badges: (await B.badgesFor([l.seller_id]))[l.seller_id] || [] });
 }));
 app.get("/api/my/listings", need, wrap(async (req, res) => res.json(await q(`select ${LCOLS},l.status ${LFROM} where l.seller_id=$1 order by l.created_at desc`, [req.user.id]))));
-const lbody = b => {
-  const price = Math.round(+b.price * 100), stock = +b.stock || 1;
-  if (String(b.title || "").length < 5 || b.title.length > 120 || !(price > 0) || !Number.isInteger(stock) || stock < 1) throw E(400, "invalid input");
-  if (price > 2000000000 || stock > 1000000) throw E(400, "invalid input");
-  return [b.title, (b.summary || "").slice(0, 300), (b.details || "").slice(0, 3000), price, stock, (b.delivery_time || "").slice(0, 40)];
+const lchk = (b, minStock) => {
+  const price = Math.round(+b.price * 100), stock = +b.stock;
+  if (String(b.title || "").trim().length < 5) throw E(400, "Название слишком короткое: нужно минимум 5 символов");
+  if (String(b.title).length > 120) throw E(400, "Название слишком длинное: максимум 120 символов");
+  if (!Number.isFinite(price) || !(price > 0)) throw E(400, "Укажите цену больше нуля");
+  if (price > 2000000000) throw E(400, "Слишком большая цена: максимум 20 000 000 ₽");
+  if (!Number.isInteger(stock) || stock < minStock) throw E(400, minStock ? "Количество: целое число от 1" : "Количество: целое число от 0");
+  if (stock > 1000000) throw E(400, "Слишком большое количество: максимум 1 000 000");
+  return [price, stock];
+};
+hooks.lchk = lchk;
+const lbody = b => { const [price, stock] = lchk({ ...b, stock: b.stock === undefined || b.stock === "" ? 1 : b.stock }, 1);
+  return [b.title.trim(), (b.summary || "").slice(0, 300), (b.details || "").slice(0, 3000), price, stock, (b.delivery_time || "").slice(0, 40)];
 };
 app.post("/api/listings", need, wrap(async (req, res) => {
-  const [me] = await q("select is_seller,seller_verified,role from users where id=$1", [req.user.id]); if (!me?.is_seller) throw E(403, "become a seller first");
-  if (process.env["REQUIRE_SELLER_VERIFICATION"] !== "false" && !me.seller_verified) throw E(403, "seller verification required");
+  const [me] = await q("select is_seller,seller_verified,role from users where id=$1", [req.user.id]); if (!me?.is_seller) throw E(403, "Сначала станьте продавцом: включите режим продавца в профиле");
+  if (process.env["REQUIRE_SELLER_VERIFICATION"] !== "false" && !me.seller_verified) throw E(403, "Нужна верификация продавца: пройдите её в меню, раздел «Верификация продавца»");
   const [g] = await q("select id from games where slug=$1", [req.body.game]), [c] = await q("select id from categories where slug=$1", [req.body.category]);
-  if (!g || !c) throw E(400, "unknown game or category");
-  const [gm] = await q("select count(*)::int n, (count(*) filter (where category_id=$2))::int ok from game_categories where game_id=$1", [g.id, c.id]); if (gm.n > 0 && gm.ok === 0) throw E(400, "category not available for this game");
+  if (!g || !c) throw E(400, "Выберите игру и категорию из списка");
+  const [gm] = await q("select count(*)::int n, (count(*) filter (where category_id=$2))::int ok from game_categories where game_id=$1", [g.id, c.id]); if (gm.n > 0 && gm.ok === 0) throw E(400, "Для этой игры нельзя выбрать такую категорию");
   const attrs = Object.fromEntries(Object.entries(req.body.attrs || {}).filter(([k, v]) => /^[a-z_]{1,30}$/.test(k) && !/pass|pwd|token|secret|key/i.test(k) && ["string", "number"].includes(typeof v)).slice(0, 12).map(([k, v]) => [k, String(v).slice(0, 200)]));
-  let img = null; if (req.body.image) { const [m] = await q("select id from media where id=$1 and owner_id=$2 and kind='listing'", [req.body.image, req.user.id]); if (!m) throw E(400, "bad image"); img = m.id; }
+  let img = null; if (req.body.image) { const [m] = await q("select id from media where id=$1 and owner_id=$2 and kind='listing'", [req.body.image, req.user.id]); if (!m) throw E(400, "Картинка не найдена на сервере: загрузите её заново"); img = m.id; }
   const flag = wf(req.body.title, req.body.summary, req.body.details, Object.values(attrs));
   const hold = flag ? "Автопроверка: " + flag : (hooks.premod() && !["moderator", "admin", "owner"].includes(me.role) ? "Новый лот: ожидает проверки модератором" : null);
   const ins = () => q("insert into listings(seller_id,game_id,category_id,title,summary,details,price_cents,stock,delivery_time,status,attrs,image_media,after_msg,allow_group,deactivate_on_sale) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$15,$10,$11,$12,$13,$14) returning id,status", [req.user.id, g.id, c.id, ...lbody(req.body), attrs, img, String(req.body.after_msg || "").slice(0, 2000), req.body.allow_group === true, req.body.deactivate_on_sale === true, hold ? "pending" : "active"]);
@@ -240,7 +272,7 @@ app.post("/api/orders", need, wrap(async (req, res) => {
   res.status(201).json(await tx(async c => {
     const { rows: [l] } = await c.query("select * from listings where id=$1 and status='active' for update", [req.body?.listingId]);
     if (!l) throw E(404, "listing unavailable"); if (l.seller_id === req.user.id) throw E(400, "own listing"); if (l.stock < n || (l.auto_delivery && (l.auto_items || []).length < n)) throw E(409, "not enough stock");
-    const unit = l.price_cents;
+    const unit = l.price_cents; if (unit * n > 2000000000) throw E(400, "Слишком большая сумма заказа: уменьшите количество");
     const { rows: [o] } = await c.query("insert into orders(listing_id,buyer_id,seller_id,unit_price_cents,quantity,total_cents,currency) values($1,$2,$3,$4,$5,$6,$7) returning *", [l.id, req.user.id, l.seller_id, unit, n, unit * n, l.currency]);
     await ev(c, o.id, "pending_payment", req.user.id); return o;
   }));
@@ -316,6 +348,7 @@ app.post("/api/conversations/:id/messages", need, wrap(async (req, res) => {
   const [m] = await q("insert into messages(conversation_id,sender_id,body,listing_id) values($1,$2,$3,$4) returning id,conversation_id,sender_id,body,created_at,listing_id", [c.id, req.user.id, body, lid]); m.lot_title = lt;
   if (req.body?.attachmentId) { try { await r2.linkAtt(req.body.attachmentId, req.user.id, "chat", "message_id", m.id, c.id); } catch (e) { await q("delete from messages where id=$1", [m.id]); throw e; } m.atts = await q("select id,name,mime,size from attachments where message_id=$1", [m.id]); }
   push(c.buyer_id, m); push(c.seller_id, m); res.status(201).json(m);
+  { const to = req.user.id === c.buyer_id ? c.seller_id : c.buyer_id; q("select username from users where id=$1", [req.user.id]).then(([s]) => hooks.notifyChat?.(to, s?.username || "пользователь", body, c.id)); }
 }));
 app.post("/api/reports", need, wrap(async (req, res) => {
   const { targetType, targetId, reason } = req.body || {}; if (String(reason || "").length < 5) throw E(400, "reason too short");
