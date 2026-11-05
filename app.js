@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import express from "express"; import helmet from "helmet"; import cookieParser from "cookie-parser";
 import SCHEMA from "./schema_bundle.js"; import rateLimit from "express-rate-limit"; import { shieldEarly, shieldRules, antibot } from "./shield.js"; import bcrypt from "bcryptjs"; import jwt from "jsonwebtoken";
-import { verifyTotp, hashBackup } from "./totp.js"; import routes9 from "./routes9.js"; import routes10 from "./routes10.js"; import routes11 from "./routes11.js";
+import { verifyTotp, skewOf, hashBackup } from "./totp.js"; import routes9 from "./routes9.js"; import routes10 from "./routes10.js"; import routes11 from "./routes11.js";
 import pg from "pg"; import routes2 from "./routes2.js"; import routes3 from "./routes3.js"; import routes7 from "./routes7.js";
 import wf from "./wordfilter.js"; import routes8 from "./routes8.js"; import routes6 from "./routes6.js"; import sysmsg from "./sysmsg.js"; import routes4 from "./routes4.js"; import routes5 from "./routes5.js"; import { makeBadges } from "./badges.js"; import fs from "fs"; import path from "path"; import { fileURLToPath } from "url";
 const dir = path.dirname(fileURLToPath(import.meta.url));
@@ -81,8 +81,10 @@ app.use("/api", (req, res, next) => {
     liveT.set(sc, setTimeout(() => { liveT.delete(sc); live("refresh", { s: sc }); }, 400));
   }); next();
 });
-const APP_VERSION = "v61";
+const APP_VERSION = "v63";
 app.get("/api/version", (_q, r) => { const h = f => { try { return crypto.createHash("sha1").update(fs.readFileSync(new URL(f, import.meta.url))).digest("hex").slice(0, 8); } catch { return null; } }; r.json({ version: APP_VERSION, files: { routes2: h("./routes2.js"), routes10: h("./routes10.js"), app: h("./app.js") } }); });
+const dbFp = async () => { const [d] = await q("select md5(current_database()||pg_postmaster_start_time()::text) f, now() n"); return { db: d.f.slice(0, 6), db_time: d.n }; };
+app.get("/api/diag", async (_q, r) => { try { r.json({ version: APP_VERSION, server_time: new Date().toISOString(), ...(await dbFp()) }); } catch (e) { r.status(500).json({ error: "db" }); } });
 app.get("/health", (_, r) => r.send("ok"));
 const wrap = f => (req, res, next) => Promise.resolve(f(req, res, next)).catch(next);
 const fpSeen = new Map();
@@ -105,7 +107,7 @@ const admin = wrap(async (req, res, next) => { const [u] = await q("select role 
 const setCookie = (res, id) => res.cookie("t", jwt.sign({ id }, JWT_SECRET, { expiresIn: "7d" }), { httpOnly: true, sameSite: "lax", secure: prod, maxAge: 7 * 864e5 });
 const lim = rateLimit({ windowMs: 15 * 60e3, limit: 30 });
 const U = "id,public_id,username,email,role,is_seller,avatar_url,bio,seller_verified,avatar_media,cover_media,theme";
-const hooks = {}, B = makeBadges(q); hooks.live = live;
+const hooks = {}, B = makeBadges(q); hooks.live = live; hooks.dbFp = dbFp;
 // v44: лот ушёл на проверку: уведомление модераторам на сайте (колокольчик) и в Telegram-боте администратора
 hooks.premod = () => process.env["PREMODERATE_LISTINGS"] !== "false";
 hooks.modNotify = async (id, title, reason) => {
@@ -137,6 +139,7 @@ const twofaCheck = async (uid, code) => {
   const [u] = await q("select totp_secret,totp_backup,totp_last_step from users where id=$1 and totp_enabled", [uid]); let ok = false;
   if (u) {
     const st = verifyTotp(u.totp_secret, code);
+    if (st === null) { const sk = skewOf(u.totp_secret, code); if (sk !== null && Math.abs(sk) >= 60) { console.warn("[2fa] расхождение часов (сек, код приложения относительно сервера):", sk); throw E(401, `Часы сервера расходятся с вашим телефоном примерно на ${Math.abs(sk)} с. Код из приложения верный, но сервер видит другое время. Администратору нужно включить синхронизацию времени на сервере (NTP).`); } }
     if (st !== null && u.totp_last_step !== null && +st <= +u.totp_last_step) throw E(401, "2fa code reused");
     if (st !== null) { await q("update users set totp_last_step=$2 where id=$1", [uid, st]); ok = true; }
     else if (st === null && /^[0-9A-Fa-f]{5}-?[0-9A-Fa-f]{5}$/.test(String(code || "").trim())) {

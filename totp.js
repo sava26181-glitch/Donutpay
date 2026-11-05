@@ -17,3 +17,11 @@ export const otpUri = (secret, label, issuer = "DonutPay") => `otpauth://totp/${
 export const hashBackup = c => crypto.createHash("sha256").update(String(c).toUpperCase().replace(/[\s-]/g, "")).digest("hex");
 export const newBackupCodes = (n = 8) => Array.from({ length: n }, () => { const x = crypto.randomBytes(5).toString("hex").toUpperCase(); return x.slice(0, 5) + "-" + x.slice(5) });
 export const hotpAt = (secret, step) => hotp(b32dec(secret), step); // для тестов
+
+// насколько секунд расходятся часы (±20 минут), если код подошёл с другим шагом; иначе null
+export function skewOf(secret, code, t = Date.now()) {
+  code = String(code || "").replace(/\s/g, ""); if (!/^\d{6}$/.test(code)) return null;
+  const key = b32dec(secret), s = stepNow(t);
+  for (let d = -40; d <= 40; d++) if (hotp(key, s + d) === code) return d * 30;
+  return null;
+}

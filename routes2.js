@@ -137,6 +137,7 @@ export default function routes2(app, { q, pool, tx, E, wrap, need, online, B, ho
       if (/^[A-Za-z0-9]{8}$/.test(cd)) { guess(from); m.text = "/start " + cd.toUpperCase(); }
     }
     if (typeof m.text === "string" && /^\/(version|ping)(@\w+)?$/i.test(m.text.trim())) return say(from, "Бот DonutPay работает. Версия обработчика: v61 (код отправляется в чат одним сообщением).");
+    if (typeof m.text === "string" && /^\/diag(@\w+)?$/i.test(m.text.trim())) { const d = await hooks.dbFp?.().catch(() => null); return say(from, `Диагностика бота. Версия v61+, время сервера: ${new Date().toISOString()}, база: ${d ? d.db : "нет доступа"}. Сравните с https://ВАШ-САЙТ/api/diag: «база» должна совпадать.`); }
     console.log("[telegram:verify] update:", m.contact ? "contact" : String(m.text || "").split(" ")[0].slice(0, 12));
     if (m.text === "/cancel") { await q("update seller_verifications set status='failed' where telegram_id=$1 and status='awaiting_contact'", [from]); return say(from, "Верификация отменена. Вы можете начать заново на сайте.", { reply_markup: { remove_keyboard: true } }); }
     if (typeof m.text === "string" && m.text.startsWith("/start")) {

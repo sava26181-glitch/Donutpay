@@ -1,6 +1,6 @@
 // v24: безопасность аккаунта — смена пароля и двухэтапная аутентификация (TOTP)
 import bcrypt from "bcryptjs"; import rateLimit from "express-rate-limit";
-import { newSecret, otpUri, verifyTotp, newBackupCodes, hashBackup } from "./totp.js"; import { mailConfigured, sendMail, mailErr } from "./mailer.js";
+import { newSecret, otpUri, verifyTotp, skewOf, newBackupCodes, hashBackup } from "./totp.js"; import { mailConfigured, sendMail, mailErr } from "./mailer.js";
 export default function routes9(app, { q, E, wrap, need, twofaCheck }) {
   const audit = (a, act, tt, tid, d) => q("insert into audit_log(actor_id,action,target_type,target_id,details) values($1,$2,$3,$4,$5)", [a, act, tt, String(tid ?? ""), d || {}]).catch(() => {});
   const rl = rateLimit({ windowMs: 15 * 60e3, limit: 20 });
@@ -25,7 +25,7 @@ export default function routes9(app, { q, E, wrap, need, twofaCheck }) {
   app.post("/api/me/2fa/enable", need, rl, wrap(async (req, res) => {
     const [u] = await q("select totp_secret,totp_enabled from users where id=$1", [req.user.id]);
     if (!u?.totp_secret || u.totp_enabled) throw E(400, "invalid input");
-    const st = verifyTotp(u.totp_secret, req.body?.code); if (st === null) throw E(400, "wrong 2fa code");
+    const st = verifyTotp(u.totp_secret, req.body?.code); if (st === null) { const sk = skewOf(u.totp_secret, req.body?.code); if (sk !== null && Math.abs(sk) >= 60) throw E(400, `Часы сервера расходятся с вашим телефоном примерно на ${Math.abs(sk)} с. Код верный, но сервер видит другое время. Нужна синхронизация времени на сервере (NTP).`); throw E(400, "wrong 2fa code"); }
     const codes = newBackupCodes(); await q("update users set totp_enabled=true,totp_last_step=null,totp_backup=$2::jsonb where id=$1", [req.user.id, JSON.stringify(codes.map(hashBackup))]);
     audit(req.user.id, "2fa_enable", "user", req.user.id); res.json({ ok: true, backup_codes: codes });
   }));
