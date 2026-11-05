@@ -30,7 +30,7 @@
   window.verify = async function () {
     need(); const v = await vstat();
     const head = `<div class="vfh"><span class="vfi">${SHI}</span><div><h2>Верификация продавца</h2><p>Нужна один раз, чтобы публиковать объявления.</p></div></div>`;
-    if (v.verified) return `<div class="vf">${head}<div class="card vfok"><span class="vfi ok">${SHI}</span><div><b>Верификация пройдена</b><p class="m">Ваш Telegram подтверждён. Можно создавать объявления.</p></div></div><button class="btn pri vfsell" onclick="go('/sell')">Создать объявление</button></div>`;
+    if (v.verified) return `<div class="vf">${head}<div class="card vfok"><span class="vfi ok">${SHI}</span><div><b>Верификация пройдена</b><p class="m">Ваш Telegram подтверждён. Можно создавать объявления.</p></div></div></div>`;
     if (!v.configured) return `<div class="vf">${head}<div class="card"><b>Верификация временно недоступна</b><p class="m">Бот пока не настроен на сервере. Не хватает переменных окружения: ${(v.missing || []).map(x => `<code>${esc(x)}</code>`).join(", ") || "TELEGRAM_BOT_TOKEN, TELEGRAM_BOT_USERNAME, TELEGRAM_WEBHOOK_SECRET"}.</p></div></div>`;
     return `<div class="vf">${head}<div class="card vfc" id="vfb"><ol class="vfs">
       <li class="cur"><span class="vfn">1</span><div><b>Получите код в боте</b><p>Откройте бота и нажмите «Старт». Бот пришлёт код.</p><div class="vfa"><a class="btn pri" href="https://t.me/${esc(v.bot)}?start=code" target="_blank" rel="noopener">Открыть бота</a></div></div></li>
