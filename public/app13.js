@@ -51,14 +51,16 @@ ${wait ? `<button class="btn big" style="width:100%" onclick="document.getElemen
     const rs = await api("/admin/kyc");
     return `<h2>Админ-панель</h2>${tabs("kyc")}` + (rs.map(r => `<div class="card" id="kc-${r.id}"><div class="row bet"><b>${E(r.username)}</b><span class="m">${dt(r.submitted_at || r.created_at)}</span></div>
 <div class="m" style="margin:2px 0 6px">${r.kind === "order" ? `Заказ #${r.order_number}, ${rub(r.total_cents / 100)}. ` : "По желанию пользователя. "}Покупок завершено: ${r.done}. ${E(r.reason || "")}</div>
-${r.status === "submitted" ? `<div class="row" style="flex-wrap:wrap"><button class="btn sm" onclick="kycWatch('${r.id}')">Смотреть видео</button><button class="btn sm pri" onclick="kycDo('${r.id}','approve')">Подтвердить</button></div>
+${r.status === "submitted" ? `<div class="row" style="flex-wrap:wrap"><button class="btn sm" onclick="kycWatch('${r.id}')">Смотреть видео</button></div>
+<div class="row" style="margin-top:8px;flex-wrap:nowrap"><input id="kname-${r.id}" placeholder="Фамилия и имя по паспорту" maxlength="80" autocomplete="off" style="margin:0"><button class="btn sm pri" onclick="kycDo('${r.id}','approve')">Подтвердить</button></div>
 <div class="row" style="margin-top:8px;flex-wrap:nowrap"><input id="kn-${r.id}" placeholder="Причина отказа" maxlength="300" style="margin:0"><button class="btn sm" onclick="kycDo('${r.id}','reject')">Отклонить</button></div>` : `<span class="m">Ждём видео от пользователя</span>`}</div>`).join("") || `<div class="card m">Видео на проверку нет.</div>`);
   };
   window.kycWatch = act(async id => { const r = await api(`/kyc/${id}/url`); mdl(`<video src="${E(r.url)}" controls playsinline autoplay style="width:100%;max-height:70vh;border-radius:12px;background:#000"></video><button class="btn big" style="width:100%;margin-top:10px" onclick="document.getElementById('md').remove()">Закрыть</button>`) });
   window.kycDo = act(async (id, action) => {
-    const note = (document.getElementById("kn-" + id)?.value || "").trim();
+    const note = (document.getElementById("kn-" + id)?.value || "").trim(), name = (document.getElementById("kname-" + id)?.value || "").trim();
     if (action === "reject" && note.length < 3) { toast("Напишите причину отказа"); return }
-    const r = await api("/admin/kyc/" + id, { method: "POST", body: { action, note } });
+    if (action === "approve" && name.split(/\s+/).length < 2) { toast("Впишите фамилию и имя по паспорту: по ним сверяется получатель при выводе"); return }
+    const r = await api("/admin/kyc/" + id, { method: "POST", body: { action, note, name } });
     toast(action === "approve" ? "Подтверждено" + (r.released ? ", холды сняты: " + r.released : "") : "Отклонено"); route();
   });
 })();

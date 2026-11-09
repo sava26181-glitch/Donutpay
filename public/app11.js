@@ -69,11 +69,11 @@
     const u = ME, svg = n => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${MI[n]}</svg>`;
     const item = ([t, h, ic, bd, cls]) => `<a class="umi${cls ? " " + cls : ""}" onclick="${h ? `go('${h}')` : "logout()"}"><span class="umic">${svg(ic)}</span><span class="umt">${t}</span>${bd ? (String(bd).startsWith("<") ? bd : `<b class="bd2">${bd}</b>`) : ""}</a>`;
     let groups;
-    if (!u) groups = [[["Войти", "/login", "login"], ["Регистрация", "/register", "userplus"]], [["Турниры", "/tournaments", "trophy"], ["Кодекс продавца", "/code", "scroll"], ["Настройки", "/settings", "gear"], ["Поддержка", "/tickets", "help"]]];
+    if (!u) groups = [[["Войти", "/login", "login"], ["Регистрация", "/register", "userplus"]], [["Турниры", "/tournaments", "trophy"], ["Кодекс продавца", "/code", "scroll"], ["Безопасность", "/safety", "admin"], ["Настройки", "/settings", "gear"], ["Поддержка", "/tickets", "help"]]];
     else {
       const a = [["Мой профиль", "/u/" + u.username, "user"]]; if (u.is_seller) a.push(["Мои объявления", "/my", "list"]);
       a.push(["Мои покупки", "/orders?t=buy", "bag"]); if (u.is_seller) a.push(["Мои продажи", "/orders?t=sell", "coin"]); a.push(["Финансы", "/finance", "wallet", '<span class="umbal" id="umbal"></span>']);
-      const b = [["Уведомления", "/notifications", "bell", NOTIF > 0 ? (NOTIF > 99 ? "99+" : NOTIF) : ""], ["Турниры", "/tournaments", "trophy"], ["Верификация продавца", "/verify", "check"], ["Кодекс продавца", "/code", "scroll"], ["Настройки", "/settings", "gear"], ["Поддержка", "/tickets", "help"]];
+      const b = [["Уведомления", "/notifications", "bell", NOTIF > 0 ? (NOTIF > 99 ? "99+" : NOTIF) : ""], ["Турниры", "/tournaments", "trophy"], ["Верификация продавца", "/verify", "check"], ["Кодекс продавца", "/code", "scroll"], ["Безопасность", "/safety", "admin"], ["Настройки", "/settings", "gear"], ["Поддержка", "/tickets", "help"]];
       if (isStaff()) b.push(["Админ-панель", "/admin", "admin"]);
       groups = [a, b, [["Выход", null, "exit", "", "out"]]];
     }

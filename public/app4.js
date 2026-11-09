@@ -282,7 +282,7 @@ const topupDo = act(async () => { await api("/finance/topup", { method: "POST", 
 function withdrawForm(bal) {
   mdl(`<h3 style="margin:0 0 8px">Вывести деньги</h3><p class="m" style="margin:0 0 10px">Доступно: ${fm(bal)}. Заявки обрабатывает администратор вручную. Пока баланс тестовый, реальные деньги не переводятся.</p><label>Сумма, ₽</label><input id="wda" type="number" inputmode="numeric" min="10" value="${Math.floor(bal) >= 10 ? Math.floor(bal) : 10}"><label>Способ</label><select id="wdm"><option value="card">Банковская карта</option><option value="sbp">СБП</option><option value="crypto">Криптовалюта</option><option value="other">Другое</option></select><label>Реквизиты</label><input id="wdd" maxlength="200" placeholder="Номер карты, телефон или адрес кошелька"><button class="btn pri" style="width:100%;margin-top:12px" onclick="withdrawDo()">Отправить заявку</button>`);
 }
-const withdrawDo = act(async () => { await api("/finance/withdraw", { method: "POST", body: { amount: +$("#wda").value, method: window._wdm || ($("#wdm") && $("#wdm").value) || "card", details: $("#wdd").value } }); $("#md")?.remove(); toast("Заявка отправлена"); route() });
+const withdrawDo = act(async () => { await api("/finance/withdraw", { method: "POST", body: { amount: +$("#wda").value, method: window._wdm || ($("#wdm") && $("#wdm").value) || "card", details: $("#wdd").value, holder: ($("#wdh") || {}).value || "" } }); $("#md")?.remove(); toast("Заявка отправлена"); route() });
 const payBal = id => payConfirm(id);
 async function wdAdmin() {
   const ws = await api("/admin/withdrawals");
@@ -338,32 +338,29 @@ const payConfirm = act(async id => {
   window._pay = { id, need: Math.ceil(-left), test: f.test_mode, title: o.title, seller: o.seller_name, sum, qty: o.quantity, hold: f.hold_hours || 72 };
   const unit = o.unit_price_cents / 100;
   const pr = o.promo, pct = pr && pr.kind === "percent" ? +pr.value : 0, gross = (+o.unit_price_cents * o.quantity) / 100;
-  const pBtn = enough ? `<button class="btn pri big" style="width:100%" onclick="payDo()">Оплатить ${fm(sum)}</button>` : f.test_mode ? `<div class="ckw">Не хватает ${fm(-left)}</div><button class="btn pri big" style="width:100%" onclick="payTop()">Пополнить на ${fm(Math.max(10, window._pay.need))} и оплатить</button>` : `<button class="btn big" style="width:100%" onclick="$('#md').remove();go('/finance')">Перейти в финансы</button>`;
+  const canPay = enough || f.test_mode, sfBox = canPay && window.sfCheckHtml ? window.sfCheckHtml() : "";
+  const pBtn = enough ? `<button class="btn pri big" style="width:100%" data-sfneed${sfBox ? " disabled" : ""} onclick="payDo()">Оплатить ${fm(sum)}</button>` : f.test_mode ? `<div class="ckw">Не хватает ${fm(-left)}</div><button class="btn pri big" style="width:100%" data-sfneed${sfBox ? " disabled" : ""} onclick="payTop()">Пополнить на ${fm(Math.max(10, window._pay.need))} и оплатить</button>` : `<button class="btn big" style="width:100%" onclick="$('#md').remove();go('/finance')">Перейти в финансы</button>`;
   mdl(`<div class="ckh"><div><h3>Оформление заказа</h3><small class="m">Заказ #${esc(o.number || "")}</small></div></div>${ckSteps(0)}
 <div class="ckp">${o.image_media ? `<img src="/api/media/${o.image_media}" alt="">` : `<span class="ckpi">${ic4("box", 22)}</span>`}<div class="ckpb"><small>${esc(o.game_name || "")}${o.category_name ? " · " + esc(o.category_name) : ""}</small><b>${esc(o.title)}</b><small>Продавец: ${esc(o.seller_name || "")}${o.quantity > 1 ? " · " + o.quantity + " шт." : ""}</small>${o.auto_delivery ? `<span class="abd"><svg viewBox="0 0 24 24" width="12" height="12"><path d="M13 2 4 14h6l-1 8 9-12h-6z" fill="currentColor"/></svg>Автовыдача: товар придёт в чат сразу</span>` : ""}</div></div>
 ${pr ? `<div class="ckpr"><span><b>${esc(pr.code)}</b>${pct ? ` · скидка ${pct}%` : ""}</span><a onclick="promoApply('${id}',true)">Убрать</a></div>` : `<div class="pmr"><input id="pmc" placeholder="Промокод" maxlength="32" autocapitalize="characters" value="" style="text-transform:uppercase"><button class="btn" onclick="promoApply('${id}')">Применить</button></div>`}
 <div class="cksum"><div><span>Цена${o.quantity > 1 ? " × " + o.quantity : ""}</span><b>${fm(gross)}</b></div>${o.discount_cents > 0 ? `<div><span>Скидка${pct ? " " + pct + "%" : ""}</span><b class="okt">−${fm(o.discount_cents / 100)}</b></div>` : ""}<div><span>Способ оплаты</span><b>Баланс DonutPay</b></div><div><span>Ваш баланс</span><b>${fm(f.balance)}</b></div><div class="tot"><span>К оплате</span><b>${fm(sum)}</b></div></div>
-<div class="ckg">${ic4("shield", 18)}<p>Деньги у продавца только после того, как вы подтвердите получение товара. При споре их вернёт модератор.${f.test_mode ? " Баланс тестовый: реальные деньги не списываются, оплата картой и СБП появится позже." : ""}</p></div>${pBtn}`);
+<div class="ckg">${ic4("shield", 18)}<p>Деньги у продавца только после того, как вы подтвердите получение товара. При споре их вернёт модератор.${f.test_mode ? " Баланс тестовый: реальные деньги не списываются, оплата картой и СБП появится позже." : ""}</p></div>${sfBox}${pBtn}`);
 });
-// шаг 1: подтверждение покупки (без него сервер не спишет деньги)
+// оплата: обязательная галочка «Я прочитал и согласен с правилами безопасности»; первый раз правила нужно дочитать до конца.
+// Сервер может заморозить заказ и попросить видео-верификацию
+const sfReady = async () => {
+  if (window.sfCheckHtml && !$("#sfc")?.checked) { toast("Отметьте согласие с правилами безопасности"); return false }
+  return window.safetyEnsure ? await window.safetyEnsure() : true;
+};
 const payDo = act(async () => {
-  const p = window._pay; if (!p) return;
-  $("#md")?.remove();
-  mdl(`<div class="ckh"><div><h3>Подтвердите покупку</h3><small class="m">Проверьте данные перед оплатой</small></div></div>
-<div class="cksum"><div><span>Товар</span><b style="text-align:right;overflow-wrap:anywhere">${esc(p.title || "")}${p.qty > 1 ? " × " + p.qty : ""}</b></div><div><span>Продавец</span><b>${esc(p.seller || "")}</b></div><div class="tot"><span>Спишется с баланса</span><b>${fm(p.sum)}</b></div></div>
-<div class="ckg">${ic4("shield", 18)}<p>Продавец получит деньги только после того, как вы подтвердите получение. Если что-то пойдёт не так, откройте спор, и деньги вернёт модератор. Вернуть оплату после подтверждения получения нельзя.</p></div>
-<label class="ckok"><input type="checkbox" id="pcf" onchange="$('#pgo').disabled=!this.checked"><span>Я проверил товар и сумму и подтверждаю покупку</span></label>
-<button class="btn pri big" id="pgo" style="width:100%;margin-top:12px" disabled onclick="payGo()">Подтвердить и оплатить</button>`);
-});
-// шаг 2: оплата. Сервер может заморозить заказ и попросить видео-верификацию
-const payGo = act(async () => {
-  if (window._paying) return; window._paying = 1; const id = window._pay.id;
-  try { const r = await api(`/orders/${id}/pay-balance`, { method: "POST", body: { confirm: true } }); $("#md")?.remove();
+  if (window._paying || !window._pay) return; if (!(await sfReady())) return;
+  window._paying = 1; const id = window._pay.id;
+  try { const r = await api(`/orders/${id}/pay-balance`, { method: "POST", body: { confirm: true, safety: true } }); $("#md")?.remove();
     if (r.review_required) { window.kycModal ? window.kycModal(r) : toast("Заказ на проверке: нужна видео-верификация"); return }
     mdl(`<div style="text-align:center"><div class="okc">✓</div><h3 style="margin:8px 0 2px">Оплата прошла</h3><p class="m" style="margin:0 0 10px">Заказ #${esc(r.number || "")} оплачен ${new Date().toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</p></div>${ckSteps(1)}<button class="btn pri big" style="width:100%;margin-top:14px" onclick="$('#md').remove();go('/order/${id}')">Перейти к заказу</button>`); SFX.play && SFX.play("ok") }
   finally { window._paying = 0 }
 });
-const payTop = act(async () => { if (window._paying) return; window._paying = 1; try { await api("/finance/topup", { method: "POST", body: { amount: Math.max(10, window._pay.need) } }) } finally { window._paying = 0 } await payConfirm(window._pay.id) });
+const payTop = act(async () => { if (window._paying || !window._pay) return; if (!(await sfReady())) return; window._paying = 1; try { await api("/finance/topup", { method: "POST", body: { amount: Math.max(10, window._pay.need) } }) } finally { window._paying = 0 } await payDo() });
 
 // ---- алфавит игр следит за прокруткой
 let AZL = "";

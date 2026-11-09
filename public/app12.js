@@ -8,6 +8,7 @@
     ["tickets", "Обращения ждут ответа", "/admin?tab=tickets"],
     ["reports", "Жалобы", "/admin?tab=reports"],
     ["tournaments", "Турниры идут: подвести итог", "/tournaments"],
+    ["paused", "Продажи на паузе: споры больше 5%", "/admin?tab=paused"],
     ...(ad ? [["kyc", "Видео-верификация: проверить", "/admin?tab=kyc"], ["withdrawals", "Выводы в обработке", "/admin?tab=withdrawals"]] : [])
   ].map(r => ({ k: r[0], t: r[1], h: r[2], n: +c[r[0]] || 0 }));
   const tabsHtml = t => `<div class="tabs">${[["home", "Что проверить"], ["listings", "Объявления"], ["users", "Пользователи"], ["orders", "Заказы"], ["disputes", "Споры"], ["tickets", "Обращения"], ["reports", "Жалобы"], ...(["admin", "owner"].includes(ME.role) ? [["kyc", "Верификация"]] : []), ["more", "Ещё"]].map(x => `<a class="${t === x[0] ? "on" : ""}" onclick="go('/admin?tab=${x[0]}')">${x[1]}</a>`).join("")}</div>`;
