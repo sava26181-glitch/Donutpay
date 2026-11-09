@@ -9,7 +9,7 @@ export default function routes5(app, { q, pool, tx, E, wrap, need, hooks, pushUs
     await c.query("insert into wallets(user_id) values($1) on conflict do nothing", [uid]);
     const { rows: [l] } = await c.query("insert into ledger_entries(user_id,kind,amount,ref_type,ref_id,provider_event_id) values($1,$2,$3,$4,$5,$6) on conflict(provider_event_id) do nothing returning id", [uid, kind, amount, refType || null, refId || null, evid || null]);
     if (!l) return false;
-    if (amount < 0 && kind !== "dispute_capture") { const { rows: [h] } = await c.query("select coalesce((select sum(amount) from holds where user_id=$1 and status='held'),0) h,(select balance from wallets where user_id=$1 for update) b", [uid]); if (Number(h.b) + amount < Number(h.h) - 1e-9) throw E(409, "Часть средств заморожена из-за открытого спора. Доступно: " + Math.max(0, Number(h.b) - Number(h.h)).toFixed(2) + " ₽"); }
+    if (amount < 0 && kind !== "dispute_capture") { const { rows: [h] } = await c.query("select coalesce((select sum(amount) from holds where user_id=$1 and status='held' and (release_at is null or release_at>now())),0) h,(select balance from wallets where user_id=$1 for update) b", [uid]); if (Number(h.b) + amount < Number(h.h) - 1e-9) throw E(409, "Часть средств заморожена из-за открытого спора. Доступно: " + Math.max(0, Number(h.b) - Number(h.h)).toFixed(2) + " ₽"); }
     try { await c.query("update wallets set balance=balance+$2 where user_id=$1", [uid, amount]); } catch (e) { if (e.code === "23514" || /check constraint/.test(e.message)) throw E(409, "not enough funds"); throw e; }
     return true;
   };
@@ -65,6 +65,10 @@ export default function routes5(app, { q, pool, tx, E, wrap, need, hooks, pushUs
     const done = to === "buyer" ? await move(c, o.buyer_id, "refund", ref, "order", o.id, key) : await move(c, o.seller_id, "order_payout", amt, "order", o.id, key);
     if (done && to === "buyer") await c.query("update orders set payment_status='refunded',updated_at=now() where id=$1", [o.id]);
     if (done && to !== "buyer") await c.query("update orders set fee_cents=$2 where id=$1", [o.id, fee]);
+    if (done && to !== "buyer" && amt > 0) { // холд: деньги продавца заморожены на 72 часа, если личность не подтверждена
+      const { rows: [sv] } = await c.query("select id_verified_at from users where id=$1", [o.seller_id]);
+      if (!sv?.id_verified_at) await c.query("insert into holds(order_id,user_id,amount,release_at,reason) values($1,$2,$3,now()+($4||' hours')::interval,'hold72') on conflict(order_id) do nothing", [o.id, o.seller_id, amt, String(hooks.holdHours?.() || 72)]);
+    }
     if (done) await c.query("insert into notifications(user_id,type,payload) values($1,$2,$3)", [to === "buyer" ? o.buyer_id : o.seller_id, to === "buyer" ? "order_refund" : "order_payout", { order_id: o.id, number: o.number, amount: to === "buyer" ? ref : amt, fee: fee / 100 }]);
     return done;
   };
@@ -72,9 +76,9 @@ export default function routes5(app, { q, pool, tx, E, wrap, need, hooks, pushUs
   hooks.holdForDispute = async (c, o) => {
     const { rows: [p] } = await c.query("select amount from ledger_entries where provider_event_id=$1 and kind='order_payout'", ["settle:" + o.id]); if (!p) return false;
     const { rows: [w] } = await c.query("select balance from wallets where user_id=$1 for update", [o.seller_id]);
-    const { rows: [h0] } = await c.query("select coalesce(sum(amount),0) h from holds where user_id=$1 and status='held'", [o.seller_id]);
+    const { rows: [h0] } = await c.query("select coalesce(sum(amount),0) h from holds where user_id=$1 and order_id<>$2 and status='held' and (release_at is null or release_at>now())", [o.seller_id, o.id]);
     const free = Math.max(0, Number(w?.balance || 0) - Number(h0.h)), amt = Math.min(Number(p.amount), free);
-    await c.query("insert into holds(order_id,user_id,amount) values($1,$2,$3) on conflict(order_id) do update set status='held',amount=excluded.amount,closed_at=null", [o.id, o.seller_id, amt]);
+    await c.query("insert into holds(order_id,user_id,amount) values($1,$2,$3) on conflict(order_id) do update set status='held',amount=excluded.amount,closed_at=null,release_at=null,reason='dispute'", [o.id, o.seller_id, amt]);
     await c.query("insert into notifications(user_id,type,payload) values($1,'balance_hold',$2)", [o.seller_id, { order_id: o.id, number: o.number, amount: amt }]).catch(() => {});
     return true;
   };
@@ -95,8 +99,9 @@ export default function routes5(app, { q, pool, tx, E, wrap, need, hooks, pushUs
     const f = { in: "l.amount>0", out: "l.amount<0 and l.kind<>'withdraw'", withdraw: "l.kind in ('withdraw','withdraw_refund')", all: "true" }[type] || "true";
     const ops = await q(`select l.id,l.kind,l.amount,l.created_at,l.ref_type,l.ref_id,o.number order_number,w.status w_status from ledger_entries l left join orders o on l.ref_type='order' and o.id::text=l.ref_id left join withdrawals w on l.ref_type='withdrawal' and w.id::text=l.ref_id where l.user_id=$1 and ${f} order by l.id desc limit 100`, [req.user.id]);
     const [tt] = await q("select coalesce(sum(amount) filter (where amount>0),0) inn,coalesce(-sum(amount) filter (where amount<0 and kind<>'withdraw'),0) outt from ledger_entries where user_id=$1", [req.user.id]), [pw] = await q("select coalesce(sum(amount),0) s from withdrawals where user_id=$1 and status='pending'", [req.user.id]);
-    const [fz] = await q("select coalesce(sum(amount),0) s from holds where user_id=$1 and status='held'", [req.user.id]);
-    res.json({ totals: { in: Number(tt.inn), out: Number(tt.outt), pending: Number(pw.s) }, balance: Number(w?.balance || 0), frozen: Number(fz.s), available: Math.max(0, Number(w?.balance || 0) - Number(fz.s)), test_mode: TEST(), ops: ops.map(x => ({ ...x, amount: Number(x.amount) })) });
+    const [fz] = await q("select coalesce(sum(amount),0) s from holds where user_id=$1 and status='held' and (release_at is null or release_at>now())", [req.user.id]);
+    const hl = await q("select h.amount::float amount,h.release_at,h.reason,o.number from holds h join orders o on o.id=h.order_id where h.user_id=$1 and h.status='held' and (h.release_at is null or h.release_at>now()) order by h.created_at desc limit 20", [req.user.id]), [iv] = await q("select id_verified_at from users where id=$1", [req.user.id]);
+    res.json({ totals: { in: Number(tt.inn), out: Number(tt.outt), pending: Number(pw.s) }, balance: Number(w?.balance || 0), frozen: Number(fz.s), holds: hl, id_verified: !!iv?.id_verified_at, hold_hours: hooks.holdHours?.() || 72, available: Math.max(0, Number(w?.balance || 0) - Number(fz.s)), test_mode: TEST(), ops: ops.map(x => ({ ...x, amount: Number(x.amount) })) });
   }));
   app.post("/api/finance/topup", need, wrap(async (req, res) => {
     if (!TEST()) throw E(403, "test top-up disabled");
@@ -118,6 +123,9 @@ export default function routes5(app, { q, pool, tx, E, wrap, need, hooks, pushUs
     const paid = await tx(async c => {
       const { rows: [o] } = await c.query("select * from orders where id=$1 for update", [req.params.id]);
       if (!o || o.buyer_id !== req.user.id) throw E(404, "not found"); if (o.status !== "pending_payment") throw E(409, "order is not awaiting payment"); if (o.partner_id) throw E(409, "balance payment is not available for group orders yet");
+      if (req.body?.confirm !== true) throw E(428, "Подтвердите покупку");
+      const fr = await hooks.fraudCheck?.(c, o);
+      if (fr) { const f = await hooks.flagOrder(c, o, fr); return { review: true, kyc: f.kyc, note: f.note, buyer: o.buyer_id, order: o.id, number: o.number }; }
       if (o.promo_id) { const bad = await promoCheck(c, o.promo_id, o.buyer_id, o.id, Number(o.total_cents) + Number(o.discount_cents)); if (bad) throw E(409, "Промокод больше не действует: " + PERR[bad] + ". Уберите его и оплатите снова"); await c.query("insert into promo_uses(promo_id,user_id,order_id,discount_cents) values($1,$2,$3,$4) on conflict do nothing", [o.promo_id, o.buyer_id, o.id, o.discount_cents]); await c.query("update promo_codes set uses=uses+1 where id=$1", [o.promo_id]); }
       const { rows: [al] } = await c.query("select auto_delivery,auto_items,stock from listings where id=$1 for update", [o.listing_id]);
       if (al?.auto_delivery && (al.auto_items || []).length < o.quantity) throw E(409, "Товар закончился: продавец ещё не пополнил автовыдачу");
@@ -137,6 +145,7 @@ export default function routes5(app, { q, pool, tx, E, wrap, need, hooks, pushUs
       }
       return { seller: o.seller_id, buyer: o.buyer_id, n, number: o.number, conv: msg?.conversation_id, msg, auto };
     });
+    if (paid.review) { if (paid.note) hooks.kycNotify?.(paid.buyer, paid.note); return res.status(202).json({ review_required: true, kyc_id: paid.kyc.id, kyc_status: paid.kyc.status, order_id: paid.order, number: paid.number }); }
     try { pushUser?.(paid.seller, "notify", { id: paid.n.id, type: "order_paid", ...paid.n.payload }); } catch {}
     try { hooks.pushSys?.(paid.msg); hooks.pushSys?.(paid.auto); } catch {}
     res.json({ ok: true, number: paid.number, conversation: paid.conv });

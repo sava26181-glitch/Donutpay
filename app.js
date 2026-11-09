@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import express from "express"; import helmet from "helmet"; import cookieParser from "cookie-parser";
 import SCHEMA from "./schema_bundle.js"; import rateLimit from "express-rate-limit"; import { shieldEarly, shieldRules, antibot } from "./shield.js"; import bcrypt from "bcryptjs"; import jwt from "jsonwebtoken";
-import { verifyTotp, skewOf, hashBackup } from "./totp.js"; import routes9 from "./routes9.js"; import routes10 from "./routes10.js"; import routes11 from "./routes11.js"; import routes12 from "./routes12.js";
+import { verifyTotp, skewOf, hashBackup } from "./totp.js"; import routes9 from "./routes9.js"; import routes10 from "./routes10.js"; import routes11 from "./routes11.js"; import routes12 from "./routes12.js"; import routes13 from "./routes13.js";
 import pg from "pg"; import routes2 from "./routes2.js"; import routes3 from "./routes3.js"; import routes7 from "./routes7.js";
 import wf from "./wordfilter.js"; import routes8 from "./routes8.js"; import routes6 from "./routes6.js"; import sysmsg from "./sysmsg.js"; import routes4 from "./routes4.js"; import routes5 from "./routes5.js"; import { makeBadges } from "./badges.js"; import fs from "fs"; import path from "path"; import { fileURLToPath } from "url";
 const dir = path.dirname(fileURLToPath(import.meta.url));
@@ -57,6 +57,7 @@ await step("schema_v28.sql", SCHEMA["schema_v28.sql"]);
 await step("schema_v29.sql", SCHEMA["schema_v29.sql"]);
 await step("schema_v30.sql", SCHEMA["schema_v30.sql"]);
 await step("schema_v31.sql", SCHEMA["schema_v31.sql"]);
+await step("schema_v32.sql", SCHEMA["schema_v32.sql"]);
 };
 try { await runSchema(); if (await grantOwner(process.env["OWNER_EMAIL"])) console.log("[owner] роль owner выдана:", process.env["OWNER_EMAIL"]); globalThis.__boot = "запуск сервера"; }
 catch (e) {
@@ -65,7 +66,7 @@ catch (e) {
 }
 
 const app = express(); app.set("trust proxy", 1); app.use(shieldEarly());
-app.use(helmet({ contentSecurityPolicy: { directives: { defaultSrc: ["'self'"], styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"], fontSrc: ["'self'", "data:", "https://fonts.gstatic.com"], mediaSrc: ["'self'", "blob:", "data:", "https://*.supabase.co"], scriptSrc: ["'self'", "'unsafe-inline'", "https://challenges.cloudflare.com", "https://accounts.google.com"], scriptSrcAttr: ["'unsafe-inline'"], imgSrc: ["'self'", "data:", "blob:", "https://*.supabase.co"], connectSrc: ["'self'", "https://challenges.cloudflare.com", "https://api.mymemory.translated.net", "https://accounts.google.com"], frameSrc: ["https://challenges.cloudflare.com", "https://accounts.google.com"], styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com", "https://accounts.google.com"] } } }));
+app.use(helmet({ contentSecurityPolicy: { directives: { defaultSrc: ["'self'"], styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com", "https://accounts.google.com"], fontSrc: ["'self'", "data:", "https://fonts.gstatic.com"], mediaSrc: ["'self'", "blob:", "data:", "https://*.supabase.co"], scriptSrc: ["'self'", "'unsafe-inline'", "https://challenges.cloudflare.com", "https://accounts.google.com"], scriptSrcAttr: ["'unsafe-inline'"], imgSrc: ["'self'", "data:", "blob:", "https://*.supabase.co"], connectSrc: ["'self'", "https://challenges.cloudflare.com", "https://api.mymemory.translated.net", "https://accounts.google.com"], frameSrc: ["https://challenges.cloudflare.com", "https://accounts.google.com"], styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"] } } }));
 app.use(express.json({ limit: "50kb" })); app.use(cookieParser());
 // ---- реальное время для всех: после любого успешного изменения данных все открытые страницы получают сигнал «обновись»
 const liveC = new Set(), liveT = new Map();
@@ -82,7 +83,7 @@ app.use("/api", (req, res, next) => {
     liveT.set(sc, setTimeout(() => { liveT.delete(sc); live("refresh", { s: sc }); }, 400));
   }); next();
 });
-const APP_VERSION = "v66";
+const APP_VERSION = "v68";
 app.get("/api/version", (_q, r) => { const h = f => { try { return crypto.createHash("sha1").update(fs.readFileSync(new URL(f, import.meta.url))).digest("hex").slice(0, 8); } catch { return null; } }; r.json({ version: APP_VERSION, files: { routes2: h("./routes2.js"), routes10: h("./routes10.js"), app: h("./app.js") } }); });
 const dbFp = async () => { const [d] = await q("select md5(current_database()||pg_postmaster_start_time()::text) f, now() n"); return { db: d.f.slice(0, 6), db_time: d.n }; };
 app.get("/api/diag", async (_q, r) => { try { r.json({ version: APP_VERSION, host: _q.headers["x-forwarded-host"] || _q.headers.host, server_time: new Date().toISOString(), ...(await dbFp()) }); } catch (e) { r.status(500).json({ error: "db" }); } });
@@ -163,14 +164,13 @@ app.post("/api/auth/login", lim, wrap(async (req, res) => {
 }));
 // вход и регистрация через Google (Google Identity Services): токен проверяется у Google, клиентский ID в GOOGLE_CLIENT_ID
 app.post("/api/auth/google", lim, wrap(async (req, res) => {
-  const cid = (process.env.GOOGLE_CLIENT_ID || "").trim(); if (!cid) throw E(503, "Вход через Google пока не настроен на сервере (нет GOOGLE_CLIENT_ID)");
+  const cid = (process.env["GOOGLE_CLIENT_ID"] || "").trim(); if (!cid) throw E(503, "Вход через Google пока не настроен на сервере (нет GOOGLE_CLIENT_ID)");
   const cred = String(req.body?.credential || ""); if (cred.length < 100 || cred.length > 4000) throw E(400, "Не удалось получить ответ от Google. Попробуйте ещё раз");
   let t; try { const r = await fetch("https://oauth2.googleapis.com/tokeninfo?id_token=" + encodeURIComponent(cred), { signal: AbortSignal.timeout(8000) }); t = await r.json(); if (!r.ok) throw new Error("bad"); } catch { throw E(401, "Google не подтвердил вход. Попробуйте ещё раз"); }
   if (t.aud !== cid || !["accounts.google.com", "https://accounts.google.com"].includes(t.iss) || !(+t.exp * 1000 > Date.now())) throw E(401, "Токен Google не подходит для этого сайта");
   if (!(t.email_verified === true || t.email_verified === "true") || !t.email) throw E(403, "Почта в аккаунте Google не подтверждена");
   const email = String(t.email).toLowerCase();
   let [u] = await q("select * from users where email=$1", [email]);
-  if (u?.blocked_until && new Date(u.blocked_until) > new Date() && false) throw E(403, "blocked");
   if (u?.totp_enabled) throw E(403, "У этого аккаунта включена двухфакторная защита. Войдите по email и паролю");
   if (!u) {
     const base = (email.split("@")[0].replace(/[^\w.-]/g, "").slice(0, 18) || "user").padEnd(3, "0");
@@ -206,6 +206,7 @@ routes9(app, { q, E, wrap, need, twofaCheck });
 routes10(app, { q, tx, E, wrap, need, hooks });
 routes11(app, { q, tx, E, wrap, need });
 routes12(app, { q, E, wrap, need, hooks, online });
+routes13(app, { q, tx, E, wrap, need, hooks, pushUser });
 routes8(app, { q, pool, tx, E, wrap, need, hooks, pushUser, online: uid => online(uid), notifyStaff: t => r2.notifyStaff?.(t) });
 app.get("/api/listings", wrap(async (req, res) => {
   const { game, category, min, max, q: s, seller, sort, offset } = req.query, w = ["l.status='active'"], p = [];
@@ -366,10 +367,13 @@ app.post("/api/admin/games", need, admin, wrap(async (req, res) => { const { slu
 app.post("/api/admin/categories", need, admin, wrap(async (req, res) => { const { slug, name } = req.body || {}; if (!slug || !name) throw E(400, "slug and name required"); await q("insert into categories(slug,name) values($1,$2)", [slug, name]); res.status(201).json({ ok: true }); }));
 
 // главная отдаётся с уже встроенными настройками сайта (подвал, кнопка канала, документы), чтобы интерфейс появлялся сразу целиком
+// версия каждого файла в адресе считается по его содержимому: изменённый файл всегда скачивается заново (раньше ?v=NN кэшировался на год и правки не доходили до телефонов)
+const _vh = new Map();
+const verOf = f => { try { const p = path.join(dir, "public", f), st = fs.statSync(p), c = _vh.get(f); if (c && c.m === st.mtimeMs) return c.h; const h = crypto.createHash("sha1").update(fs.readFileSync(p)).digest("hex").slice(0, 8); _vh.set(f, { m: st.mtimeMs, h }); return h; } catch { return "0"; } };
 const idxH = (_req, res, next) => {
   try {
     const cfg = hooks.siteConfig ? hooks.siteConfig() : {};
-    const html = fs.readFileSync(path.join(dir, "public", "index.html"), "utf8").replace("<!--SC-->", "<script>window.SITE_CFG0=" + JSON.stringify(cfg).replace(/</g, "\\u003c") + "</script>");
+    const html = fs.readFileSync(path.join(dir, "public", "index.html"), "utf8").replace(/((?:src|href)="\/)([\w.-]+\.(?:js|css))\?v=\d+"/g, (_m, p, f) => `${p}${f}?v=${verOf(f)}"`).replace("<!--SC-->", "<script>window.SITE_CFG0=" + JSON.stringify(cfg).replace(/</g, "\\u003c") + "</script>");
     res.setHeader("Cache-Control", "no-cache, must-revalidate"); res.setHeader("Content-Type", "text/html; charset=utf-8"); res.end(html);
   } catch { next(); }
 };

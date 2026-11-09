@@ -105,8 +105,9 @@ export default function routes8(app, { q, pool, tx, E, wrap, need, hooks, pushUs
       (select count(*) from orders where status='dispute')::int orders,
       (select count(*) from reports where status='open')::int reports,
       (select count(*) from tournaments where status='running')::int tournaments,
-      ${adm ? "(select count(*) from withdrawals where status in ('pending','processing'))::int" : "0"} withdrawals`);
-    r.total = r.listings + r.disputes + r.tickets + r.reports + r.tournaments + r.withdrawals; res.json(r);
+      ${adm ? "(select count(*) from withdrawals where status in ('pending','processing'))::int" : "0"} withdrawals,
+      ${adm ? "(select count(*) from kyc_requests where status='submitted')::int" : "0"} kyc`);
+    r.total = r.listings + r.disputes + r.tickets + r.reports + r.tournaments + r.withdrawals + r.kyc; res.json(r);
   }));
   // жалобы: список и закрытие (раньше жалобы нигде не показывались в интерфейсе)
   const staffGate2 = wrap(async (req, _res, next) => { const [m] = await q("select role from users where id=$1", [req.user.id]); if (!["moderator", "admin", "owner"].includes(m?.role)) throw E(403, "forbidden"); next(); });
