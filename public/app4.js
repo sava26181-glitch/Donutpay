@@ -260,7 +260,7 @@ function azTop() { const h = document.querySelector("header"); if (h) document.d
 
 
 // ---- финансы (тестовый баланс; реальные платежи не подключены)
-const fm = n => Number(n).toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " ₽";
+const fm = n => { const v = Math.round((Number(n) || 0) * 100) / 100; return v.toLocaleString("ru-RU", { minimumFractionDigits: Number.isInteger(v) ? 0 : 2, maximumFractionDigits: 2 }) + " ₽" };
 function ago(d) { const s = (Date.now() - new Date(d).getTime()) / 1000, n = (k, a) => k + " " + (k % 10 === 1 && k % 100 !== 11 ? a[0] : k % 10 >= 2 && k % 10 <= 4 && (k % 100 < 10 || k % 100 >= 20) ? a[1] : a[2]) + " назад"; if (s < 60) return "только что"; if (s < 3600) return n(Math.floor(s / 60), ["минуту", "минуты", "минут"]); if (s < 86400) return n(Math.floor(s / 3600), ["час", "часа", "часов"]); if (s < 7 * 86400) return n(Math.floor(s / 86400), ["день", "дня", "дней"]); return "" }
 const FOP = {
   tournament_fee: () => ["Турнир", "Вступительный взнос", "ok"], tournament_refund: () => ["Турнир", "Возврат взноса", "ok"],
@@ -344,7 +344,7 @@ const payConfirm = act(async id => {
 <div class="ckp">${o.image_media ? `<img src="/api/media/${o.image_media}" alt="">` : `<span class="ckpi">${ic4("box", 22)}</span>`}<div class="ckpb"><small>${esc(o.game_name || "")}${o.category_name ? " · " + esc(o.category_name) : ""}</small><b>${esc(o.title)}</b><small>Продавец: ${esc(o.seller_name || "")}${o.quantity > 1 ? " · " + o.quantity + " шт." : ""}</small>${o.auto_delivery ? `<span class="abd"><svg viewBox="0 0 24 24" width="12" height="12"><path d="M13 2 4 14h6l-1 8 9-12h-6z" fill="currentColor"/></svg>Автовыдача: товар придёт в чат сразу</span>` : ""}</div></div>
 ${pr ? `<div class="ckpr"><span><b>${esc(pr.code)}</b>${pct ? ` · скидка ${pct}%` : ""}</span><a onclick="promoApply('${id}',true)">Убрать</a></div>` : `<div class="pmr"><input id="pmc" placeholder="Промокод" maxlength="32" autocapitalize="characters" value="" style="text-transform:uppercase"><button class="btn" onclick="promoApply('${id}')">Применить</button></div>`}
 <div class="cksum"><div><span>Цена${o.quantity > 1 ? " × " + o.quantity : ""}</span><b>${fm(gross)}</b></div>${o.discount_cents > 0 ? `<div><span>Скидка${pct ? " " + pct + "%" : ""}</span><b class="okt">−${fm(o.discount_cents / 100)}</b></div>` : ""}<div><span>Способ оплаты</span><b>Баланс DonutPay</b></div><div><span>Ваш баланс</span><b>${fm(f.balance)}</b></div><div class="tot"><span>К оплате</span><b>${fm(sum)}</b></div></div>
-<div class="ckg">${ic4("shield", 18)}<p>Деньги у продавца только после того, как вы подтвердите получение товара. При споре их вернёт модератор.${f.test_mode ? " Баланс тестовый: реальные деньги не списываются, оплата картой и СБП появится позже." : ""}</p></div>${sfBox}${pBtn}`);
+<div class="ckg">${ic4("shield", 18)}<p>Продавец получит деньги, когда вы подтвердите получение. Если что-то не так, откройте спор.${f.test_mode ? " Баланс тестовый, реальные деньги не списываются." : ""}</p></div>${sfBox}${pBtn}`);
 });
 // оплата: обязательная галочка «Я прочитал и согласен с правилами безопасности»; первый раз правила нужно дочитать до конца.
 // Сервер может заморозить заказ и попросить видео-верификацию

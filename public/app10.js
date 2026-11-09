@@ -169,18 +169,22 @@ const tStart = act(async id => { await api(`/tournaments/${id}/start`, { method:
 const tCancel = act(async id => { if (!confirm("Отменить турнир?")) return; await api(`/tournaments/${id}/cancel`, { method: "POST" }); toast("Турнир отменён"); route() });
 function tPrz() {
   const n = Math.max(1, Math.min(10, Math.floor(+$("#tw").value) || 1)), box = $("#tpz"), keep = [...box.querySelectorAll("input")].map(i => i.value);
-  box.innerHTML = Array.from({ length: n }, (_, i) => `<label>${i + 1} место, приз</label><input maxlength="100" placeholder="${i === 0 ? "Например, 500 ₽ или значок" : "Что получит игрок на этом месте"}" value="${esc(keep[i] || "")}">`).join("");
+  box.innerHTML = Array.from({ length: n }, (_, i) => `<label>Приз за ${i + 1} место</label><input maxlength="100" placeholder="${i === 0 ? "500 ₽ или значок" : "Приз"}" value="${esc(keep[i] || "")}">`).join("");
 }
 async function tForm(game) {
   const g = tGame(game), gname = g ? g[0] : String(game || ""), d = new Date(Date.now() + 864e5); d.setMinutes(0, 0, 0);
   const loc = new Date(d - d.getTimezoneOffset() * 6e4).toISOString().slice(0, 16);
   window._tfg = gname;
-  mdl(`<div class="tfm2"><h3>Новый турнир</h3><p class="m">Играют в самой игре. Организатор сам выбирает победителей и закрывает турнир, взносы делятся между призовыми местами.</p>
-<div class="tfs"><span class="tfn">Основное</span><div class="tgfix">${g ? `<span class="tga" style="--h:${g[2]}"><img src="/img/games/${g[1]}.webp" alt="" onerror="this.remove()"></span>` : ""}<div><small>Игра</small><b>${esc(gname)}</b></div></div><label>Название</label><input id="tt" maxlength="80" placeholder="Например, Кубок выходного дня"></div>
-<div class="tfs"><span class="tfn">Формат</span><div class="tf2"><div><label>Число мест</label><input id="ts" type="number" inputmode="numeric" min="2" max="128" step="1" value="8"></div><div><label>Взнос, ₽</label><input id="tfee" type="number" inputmode="decimal" min="0" max="100000" step="1" value="0" placeholder="0"></div></div><div class="hint">Мест может быть любое число от 2 до 128. Взнос списывается при записи. Пока идёт набор, участник может выйти и вернуть взнос; после старта взнос не возвращается. 0 означает бесплатное участие.</div><label>Начало</label><input id="td" type="datetime-local" value="${loc}"></div>
-<div class="tfs"><span class="tfn">Призы</span><label>Сколько призовых мест</label><input id="tw" type="number" inputmode="numeric" min="1" max="10" step="1" value="1" oninput="tPrz()"><div class="hint">Минимум одно место. Для каждого места укажите свой приз.</div><div id="tpz"></div></div>
-<div class="tfs"><span class="tfn">Дополнительно</span><label>Условия</label><textarea id="tr" rows="3" maxlength="4000" placeholder="Правила матчей, регламент, ограничения"></textarea></div>
-<button class="btn pri" style="width:100%" onclick="tFormGo(this)">Создать турнир</button></div>`);
+  mdl(`<div class="xt"><h3>Новый турнир</h3><p class="xt-sub">Матчи проходят в самой игре. Победителей выбираете вы, взносы делятся между призёрами.</p>
+<div class="tgfix">${g ? `<span class="tga" style="--h:${g[2]}"><img src="/img/games/${g[1]}.webp" alt="" onerror="this.remove()"></span>` : ""}<div><small>Игра</small><b>${esc(gname)}</b></div></div>
+<label for="tt">Название</label><input id="tt" maxlength="80" placeholder="Кубок выходного дня">
+<div class="xt-2"><div><label for="ts">Мест</label><input id="ts" type="number" inputmode="numeric" min="2" max="128" step="1" value="8"></div><div><label for="tfee">Взнос, ₽</label><input id="tfee" type="number" inputmode="decimal" min="0" max="100000" step="1" value="0" placeholder="0"></div></div>
+<p class="xt-hint">От 2 до 128 мест. 0 ₽ — бесплатно. Взнос вернётся, если выйти до старта.</p>
+<label for="td">Начало</label><input id="td" type="datetime-local" value="${loc}">
+<label for="tw">Призовых мест</label><input id="tw" type="number" inputmode="numeric" min="1" max="10" step="1" value="1" oninput="tPrz()">
+<div id="tpz"></div>
+<label for="tr">Условия <small>необязательно</small></label><textarea id="tr" rows="3" maxlength="4000" placeholder="Регламент матчей и ограничения"></textarea>
+<button class="btn pri big" onclick="tFormGo(this)">Создать турнир</button></div>`);
   tPrz();
 }
 const tFormGo = act(async btn => {

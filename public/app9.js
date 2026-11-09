@@ -73,15 +73,17 @@ async function secRender() {
   let s; try { s = await api("/me/security") } catch { box.remove(); return }
   const hd = (ic, t, sub, pill) => `<div class="sech"><span class="si2">${ic}</span><span><b>${t}</b><small>${sub}</small>${pill || ""}</span></div>`;
   const fl = (id, lbl, ac, ph) => `<div class="fld"><label for="${id}">${lbl}</label><div class="pwr"><input id="${id}" type="password" autocomplete="${ac}" ${ph ? `placeholder="${ph}"` : ""}><button type="button" class="eye" aria-label="Показать" onclick="eyeTog('${id}')">${IC9.eye}</button></div></div>`;
-  box.innerHTML = `<div class="card sx secc">${hd('<svg viewBox="0 0 24 24"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 018 0v4"/></svg>', "Пароль", "Смена пароля для входа")}
-  ${fl("pwc", "Текущий пароль", "current-password")}${fl("pwn", "Новый пароль", "new-password", "Минимум 8 символов")}${fl("pwn2", "Повторите новый пароль", "new-password")}
-  <button class="btn pri" onclick="pwChange()">Сменить пароль</button></div>
+  box.innerHTML = `<div class="card sx secc">
+  <details class="xs-pw"><summary>Пароль</summary>${fl("pwc", "Текущий пароль", "current-password")}${fl("pwn", "Новый пароль", "new-password", "Минимум 8 символов")}${fl("pwn2", "Повторите новый пароль", "new-password")}
+  <button class="btn pri" onclick="pwChange()">Сменить пароль</button></details></div>
   <div class="card sx secc">${hd('<svg viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="M9 12l2 2 4-4"/></svg>', "Двухэтапная аутентификация", "Дополнительная защита аккаунта", `<span class="pill ${s.twofa ? "ok" : ""}">${s.twofa ? "Включена" : "Выключена"}</span>`)}
-  <p class="sp">При входе, кроме пароля, нужен одноразовый код из приложения-аутентификатора (Google Authenticator, Authy, 2FAS и др.).</p>
+  <p class="sp">При входе нужен ещё код из приложения: Google Authenticator, Authy или 2FAS.</p>
   <div id="tfbox">${s.twofa
     ? `<p class="sp">Неиспользованных резервных кодов: ${s.backup_left}</p>${fl("tfp", "Пароль", "current-password")}<div class="fld"><label for="tfd">Код из приложения или резервный код</label><input id="tfd" inputmode="numeric" autocomplete="one-time-code"></div><button class="btn dng" onclick="tfOff()">Выключить</button>`
-    : `<button class="btn pri" onclick="tfStart()">Включить</button>`}</div></div>`;
+    : `<button class="btn pri" onclick="tfStart()">Включить</button>`}</div></div>
+  <div class="card sx secc xs-out"><span><b>Выйти на других устройствах</b><small>Если вошли с чужого телефона или заметили вход не от вас</small></span><button class="btn" onclick="logoutAll()">Выйти</button></div>`;
 }
+window.logoutAll = act(async () => { await api("/me/logout-all", { method: "POST" }); toast("Готово: другие устройства вышли из аккаунта") });
 window.pwChange = act(async () => {
   const a = $("#pwc").value, b = $("#pwn").value, c = $("#pwn2").value;
   if (!a || !b) throw new Error("Заполните все поля"); if (b.length < 8) throw new Error("Новый пароль: минимум 8 символов"); if (b !== c) throw new Error("Пароли не совпадают");

@@ -72,7 +72,7 @@
     let s; try { s = await api("/me/notify") } catch { return }
     if (!s.configured) { box.remove(); return }
     const body = !s.linked
-      ? `<p class="ntp">Новые сообщения из чатов будут приходить в Telegram, пока вас нет на сайте.</p><button class="btn pri" onclick="ntLink()">Подключить Telegram</button>`
+      ? `<p class="ntp">Сообщения из чатов, пока вас нет на сайте.</p><button class="btn pri" onclick="ntLink()">Подключить Telegram</button>`
       : `<label class="ntsw"><input type="checkbox" ${s.on ? "checked" : ""} onchange="ntToggle(this.checked)"><span>Присылать сообщения из чатов</span></label><div class="row" style="gap:8px;margin-top:10px"><button class="btn sm" onclick="ntTest()">Отправить проверку</button><button class="btn sm" onclick="ntUnlink()">Отключить</button></div>`;
     box.innerHTML = `<div class="card sx ntc"><b>Уведомления в Telegram</b>${body}</div>`;
   }
