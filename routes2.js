@@ -352,6 +352,7 @@ export default function routes2(app, { q, pool, tx, E, wrap, need, online, B, ho
       if (rowCount && ns === "cancelled") await c.query("update listings l set stock=l.stock+o.quantity,updated_at=now() from orders o where o.id=$1 and l.id=o.listing_id and not coalesce(l.auto_delivery,false)", [d.order_id]); // товар не выдан: возвращаем его на склад
       hooks.pushSys?.(await hooks.sysMsg?.(c, d.order_id, status, req.user.id));
     });
+    if (status === "resolved_buyer") { try { await hooks.sellerRateCheck?.(req.params.id); } catch (e) { console.error("[seller-rate]", e.message); } }
     res.json({ ok: true });
   }));
   // модератор пишет прямо в общий чат сторон спора: оба участника видят сообщение в обычном чате и на странице заказа

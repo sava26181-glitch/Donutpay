@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import express from "express"; import helmet from "helmet"; import cookieParser from "cookie-parser";
 import SCHEMA from "./schema_bundle.js"; import rateLimit from "express-rate-limit"; import { shieldEarly, shieldRules, antibot } from "./shield.js"; import bcrypt from "bcryptjs"; import jwt from "jsonwebtoken";
-import { verifyTotp, skewOf, hashBackup } from "./totp.js"; import routes9 from "./routes9.js"; import routes10 from "./routes10.js"; import routes11 from "./routes11.js"; import routes12 from "./routes12.js"; import routes13 from "./routes13.js";
+import { verifyTotp, skewOf, hashBackup } from "./totp.js"; import routes9 from "./routes9.js"; import routes10 from "./routes10.js"; import routes11 from "./routes11.js"; import routes12 from "./routes12.js"; import routes13 from "./routes13.js"; import routes14 from "./routes14.js";
 import pg from "pg"; import routes2 from "./routes2.js"; import routes3 from "./routes3.js"; import routes7 from "./routes7.js";
 import wf from "./wordfilter.js"; import routes8 from "./routes8.js"; import routes6 from "./routes6.js"; import sysmsg from "./sysmsg.js"; import routes4 from "./routes4.js"; import routes5 from "./routes5.js"; import { makeBadges } from "./badges.js"; import fs from "fs"; import path from "path"; import { fileURLToPath } from "url";
 const dir = path.dirname(fileURLToPath(import.meta.url));
@@ -58,6 +58,7 @@ await step("schema_v29.sql", SCHEMA["schema_v29.sql"]);
 await step("schema_v30.sql", SCHEMA["schema_v30.sql"]);
 await step("schema_v31.sql", SCHEMA["schema_v31.sql"]);
 await step("schema_v32.sql", SCHEMA["schema_v32.sql"]);
+await step("schema_v33.sql", SCHEMA["schema_v33.sql"]);
 };
 try { await runSchema(); if (await grantOwner(process.env["OWNER_EMAIL"])) console.log("[owner] роль owner выдана:", process.env["OWNER_EMAIL"]); globalThis.__boot = "запуск сервера"; }
 catch (e) {
@@ -83,7 +84,7 @@ app.use("/api", (req, res, next) => {
     liveT.set(sc, setTimeout(() => { liveT.delete(sc); live("refresh", { s: sc }); }, 400));
   }); next();
 });
-const APP_VERSION = "v68";
+const APP_VERSION = "v69";
 app.get("/api/version", (_q, r) => { const h = f => { try { return crypto.createHash("sha1").update(fs.readFileSync(new URL(f, import.meta.url))).digest("hex").slice(0, 8); } catch { return null; } }; r.json({ version: APP_VERSION, files: { routes2: h("./routes2.js"), routes10: h("./routes10.js"), app: h("./app.js") } }); });
 const dbFp = async () => { const [d] = await q("select md5(current_database()||pg_postmaster_start_time()::text) f, now() n"); return { db: d.f.slice(0, 6), db_time: d.n }; };
 app.get("/api/diag", async (_q, r) => { try { r.json({ version: APP_VERSION, host: _q.headers["x-forwarded-host"] || _q.headers.host, server_time: new Date().toISOString(), ...(await dbFp()) }); } catch (e) { r.status(500).json({ error: "db" }); } });
@@ -131,7 +132,8 @@ app.post("/api/auth/register", lim, antibot({ strictMail: true }), wrap(async (r
   if (!/^\S+@\S+\.\S+$/.test(email || "")) throw E(400, "bad email");
   if (!/^[\w.-]{3,24}$/.test(username || "")) throw E(400, "bad username");
   if ((password || "").length < 8) throw E(400, "weak password");
-  try { const [u] = await q(`insert into users(email,username,password_hash) values($1,$2,$3) returning ${U}`, [email.toLowerCase(), username, await bcrypt.hash(password, 10)]); if (await grantOwner(email)) u.role = "owner"; try { await hooks.syncAdminTg?.(); const [rr] = await q("select role from users where id=$1", [u.id]); if (rr) u.role = rr.role; } catch { } setCookie(res, u.id); res.json(u); }
+  await hooks.deviceGate?.(req);
+  try { const [u] = await q(`insert into users(email,username,password_hash) values($1,$2,$3) returning ${U}`, [email.toLowerCase(), username, await bcrypt.hash(password, 10)]); if (await grantOwner(email)) u.role = "owner"; try { await hooks.syncAdminTg?.(); const [rr] = await q("select role from users where id=$1", [u.id]); if (rr) u.role = rr.role; } catch { } await hooks.deviceBind?.(req, u.id); setCookie(res, u.id); res.json(u); }
   catch (e) { if (e.code === "23505") throw E(409, "email or username taken"); throw e; }
 }));
 // 2FA: проверка кода приложения (с защитой от повторного использования) или резервного кода; не больше 5 ошибок за 15 минут на аккаунт
@@ -173,6 +175,7 @@ app.post("/api/auth/google", lim, wrap(async (req, res) => {
   let [u] = await q("select * from users where email=$1", [email]);
   if (u?.totp_enabled) throw E(403, "У этого аккаунта включена двухфакторная защита. Войдите по email и паролю");
   if (!u) {
+    await hooks.deviceGate?.(req);
     const base = (email.split("@")[0].replace(/[^\w.-]/g, "").slice(0, 18) || "user").padEnd(3, "0");
     for (let i = 0; i < 8 && !u; i++) {
       const name = i === 0 ? base : base + Math.floor(1000 + Math.random() * 9000);
@@ -180,6 +183,7 @@ app.post("/api/auth/google", lim, wrap(async (req, res) => {
     }
     if (!u) throw E(409, "Не удалось подобрать имя пользователя, попробуйте ещё раз");
     if (await grantOwner(email)) u.role = "owner"; try { await hooks.syncAdminTg?.(); } catch { }
+    await hooks.deviceBind?.(req, u.id);
   }
   setCookie(res, u.id); const { password_hash, totp_secret, totp_backup, totp_enabled, totp_last_step, ...pub } = u; res.json(pub);
 }));
@@ -207,6 +211,7 @@ routes10(app, { q, tx, E, wrap, need, hooks });
 routes11(app, { q, tx, E, wrap, need });
 routes12(app, { q, E, wrap, need, hooks, online });
 routes13(app, { q, tx, E, wrap, need, hooks, pushUser });
+routes14(app, { q, E, wrap, need, hooks, pushUser });
 routes8(app, { q, pool, tx, E, wrap, need, hooks, pushUser, online: uid => online(uid), notifyStaff: t => r2.notifyStaff?.(t) });
 app.get("/api/listings", wrap(async (req, res) => {
   const { game, category, min, max, q: s, seller, sort, offset } = req.query, w = ["l.status='active'"], p = [];
@@ -244,6 +249,7 @@ const lbody = b => { const [price, stock] = lchk({ ...b, stock: b.stock === unde
 app.post("/api/listings", need, wrap(async (req, res) => {
   const [me] = await q("select is_seller,seller_verified,role from users where id=$1", [req.user.id]); if (!me?.is_seller) throw E(403, "Сначала станьте продавцом: включите режим продавца в профиле");
   if (process.env["REQUIRE_SELLER_VERIFICATION"] !== "false" && !me.seller_verified) throw E(403, "Нужна верификация продавца: пройдите её в меню, раздел «Верификация продавца»");
+  if (hooks.safetyOkQ && !(await hooks.safetyOkQ(req.user.id))) throw E(428, "Сначала прочитайте правила безопасности: раздел «Безопасность»");
   const [g] = await q("select id from games where slug=$1", [req.body.game]), [c] = await q("select id from categories where slug=$1", [req.body.category]);
   if (!g || !c) throw E(400, "Выберите игру и категорию из списка");
   const [gm] = await q("select count(*)::int n, (count(*) filter (where category_id=$2))::int ok from game_categories where game_id=$1", [g.id, c.id]); if (gm.n > 0 && gm.ok === 0) throw E(400, "Для этой игры нельзя выбрать такую категорию");
@@ -272,7 +278,7 @@ app.post("/api/orders", need, wrap(async (req, res) => {
   const n = +(req.body?.qty ?? 1); if (!Number.isInteger(n) || n < 1 || n > 1000) throw E(400, "bad quantity");
   res.status(201).json(await tx(async c => {
     const { rows: [l] } = await c.query("select * from listings where id=$1 and status='active' for update", [req.body?.listingId]);
-    if (!l) throw E(404, "listing unavailable"); if (l.seller_id === req.user.id) throw E(400, "own listing"); if (l.stock < n || (l.auto_delivery && (l.auto_items || []).length < n)) throw E(409, "not enough stock");
+    if (!l) throw E(404, "listing unavailable"); if (l.seller_id === req.user.id) throw E(400, "own listing"); if (await hooks.salesPaused?.(c, l.seller_id)) throw E(409, "Продавец временно не принимает заказы: администрация проверяет его сделки"); if (l.stock < n || (l.auto_delivery && (l.auto_items || []).length < n)) throw E(409, "not enough stock");
     const unit = l.price_cents; if (unit * n > 2000000000) throw E(400, "Слишком большая сумма заказа: уменьшите количество");
     const { rows: [o] } = await c.query("insert into orders(listing_id,buyer_id,seller_id,unit_price_cents,quantity,total_cents,currency) values($1,$2,$3,$4,$5,$6,$7) returning *", [l.id, req.user.id, l.seller_id, unit, n, unit * n, l.currency]);
     await ev(c, o.id, "pending_payment", req.user.id); return o;

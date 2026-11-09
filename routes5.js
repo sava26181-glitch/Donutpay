@@ -9,7 +9,7 @@ export default function routes5(app, { q, pool, tx, E, wrap, need, hooks, pushUs
     await c.query("insert into wallets(user_id) values($1) on conflict do nothing", [uid]);
     const { rows: [l] } = await c.query("insert into ledger_entries(user_id,kind,amount,ref_type,ref_id,provider_event_id) values($1,$2,$3,$4,$5,$6) on conflict(provider_event_id) do nothing returning id", [uid, kind, amount, refType || null, refId || null, evid || null]);
     if (!l) return false;
-    if (amount < 0 && kind !== "dispute_capture") { const { rows: [h] } = await c.query("select coalesce((select sum(amount) from holds where user_id=$1 and status='held' and (release_at is null or release_at>now())),0) h,(select balance from wallets where user_id=$1 for update) b", [uid]); if (Number(h.b) + amount < Number(h.h) - 1e-9) throw E(409, "Часть средств заморожена из-за открытого спора. Доступно: " + Math.max(0, Number(h.b) - Number(h.h)).toFixed(2) + " ₽"); }
+    if (amount < 0 && kind !== "dispute_capture") { const { rows: [h] } = await c.query("select coalesce((select sum(amount) from holds where user_id=$1 and status='held' and (release_at is null or release_at>now())),0) h,(select balance from wallets where user_id=$1 for update) b", [uid]); if (Number(h.b) + amount < Number(h.h) - 1e-9) { if (Number(h.h) <= 0 || Number(h.b) + amount < -1e-9) throw E(409, "not enough funds"); throw E(409, "Часть денег пока заморожена: выплата за продажу становится доступной через " + (hooks.holdHours?.() || 72) + " ч после заказа, а при споре после его решения. Доступно сейчас: " + Math.max(0, Number(h.b) - Number(h.h)).toFixed(2) + " ₽"); } }
     try { await c.query("update wallets set balance=balance+$2 where user_id=$1", [uid, amount]); } catch (e) { if (e.code === "23514" || /check constraint/.test(e.message)) throw E(409, "not enough funds"); throw e; }
     return true;
   };
@@ -101,7 +101,7 @@ export default function routes5(app, { q, pool, tx, E, wrap, need, hooks, pushUs
     const [tt] = await q("select coalesce(sum(amount) filter (where amount>0),0) inn,coalesce(-sum(amount) filter (where amount<0 and kind<>'withdraw'),0) outt from ledger_entries where user_id=$1", [req.user.id]), [pw] = await q("select coalesce(sum(amount),0) s from withdrawals where user_id=$1 and status='pending'", [req.user.id]);
     const [fz] = await q("select coalesce(sum(amount),0) s from holds where user_id=$1 and status='held' and (release_at is null or release_at>now())", [req.user.id]);
     const hl = await q("select h.amount::float amount,h.release_at,h.reason,o.number from holds h join orders o on o.id=h.order_id where h.user_id=$1 and h.status='held' and (h.release_at is null or h.release_at>now()) order by h.created_at desc limit 20", [req.user.id]), [iv] = await q("select id_verified_at from users where id=$1", [req.user.id]);
-    res.json({ totals: { in: Number(tt.inn), out: Number(tt.outt), pending: Number(pw.s) }, balance: Number(w?.balance || 0), frozen: Number(fz.s), holds: hl, id_verified: !!iv?.id_verified_at, hold_hours: hooks.holdHours?.() || 72, available: Math.max(0, Number(w?.balance || 0) - Number(fz.s)), test_mode: TEST(), ops: ops.map(x => ({ ...x, amount: Number(x.amount) })) });
+    res.json({ totals: { in: Number(tt.inn), out: Number(tt.outt), pending: Number(pw.s) }, balance: Number(w?.balance || 0), frozen: Number(fz.s), holds: hl, ...(hooks.withdrawInfo ? await hooks.withdrawInfo(req.user.id) : {}), id_verified: !!iv?.id_verified_at, hold_hours: hooks.holdHours?.() || 72, available: Math.max(0, Number(w?.balance || 0) - Number(fz.s)), test_mode: TEST(), ops: ops.map(x => ({ ...x, amount: Number(x.amount) })) });
   }));
   app.post("/api/finance/topup", need, wrap(async (req, res) => {
     if (!TEST()) throw E(403, "test top-up disabled");
@@ -112,8 +112,11 @@ export default function routes5(app, { q, pool, tx, E, wrap, need, hooks, pushUs
   app.post("/api/finance/withdraw", need, wrap(async (req, res) => {
     const a = money(req.body?.amount), method = String(req.body?.method || ""), det = String(req.body?.details || "").replace(/[\u0000-\u001f<>]/g, "").trim();
     if (!(a >= 10 && a <= 500000)) throw E(400, "amount 10-500000"); if (!["card", "sbp", "crypto", "other"].includes(method)) throw E(400, "bad method"); if (det.length < 3 || det.length > 200) throw E(400, "details 3-200 chars");
+    const holder = String(req.body?.holder || "").replace(/[\u0000-\u001f<>]/g, "").replace(/\s+/g, " ").trim().slice(0, 80);
+    if (["card", "sbp"].includes(method) && !(/^[A-Za-zА-Яа-яЁё][A-Za-zА-Яа-яЁё .'-]+$/.test(holder) && holder.split(" ").filter(x => /[A-Za-zА-Яа-яЁё]/.test(x)).length >= 2)) throw E(400, "Укажите имя и фамилию получателя полностью, как в банке");
     const r = await tx(async c => {
-      const fee = Math.round(a * FEE_WD()) / 100, { rows: [w] } = await c.query("insert into withdrawals(user_id,amount,method,details,fee) values($1,$2,$3,$4,$5) returning id", [req.user.id, a, method, det, fee]);
+      const chk = hooks.withdrawCheck ? await hooks.withdrawCheck(c, req.user.id, { amount: a, method, details: det, holder }) : { norm: null, flags: [] };
+      const fee = Math.round(a * FEE_WD()) / 100, { rows: [w] } = await c.query("insert into withdrawals(user_id,amount,method,details,fee,holder,details_norm,flags) values($1,$2,$3,$4,$5,$6,$7,$8) returning id", [req.user.id, a, method, det, fee, holder || null, chk.norm, JSON.stringify(chk.flags)]);
       await move(c, req.user.id, "withdraw", -a, "withdrawal", w.id, null); return w;
     });
     res.status(201).json({ id: r.id });
@@ -124,6 +127,9 @@ export default function routes5(app, { q, pool, tx, E, wrap, need, hooks, pushUs
       const { rows: [o] } = await c.query("select * from orders where id=$1 for update", [req.params.id]);
       if (!o || o.buyer_id !== req.user.id) throw E(404, "not found"); if (o.status !== "pending_payment") throw E(409, "order is not awaiting payment"); if (o.partner_id) throw E(409, "balance payment is not available for group orders yet");
       if (req.body?.confirm !== true) throw E(428, "Подтвердите покупку");
+      if (req.body?.safety !== true) throw E(428, "Отметьте согласие с правилами безопасности");
+      if (hooks.safetyOk && !(await hooks.safetyOk(c, o.buyer_id))) throw E(428, "Сначала прочитайте правила безопасности");
+      if (await hooks.salesPaused?.(c, o.seller_id)) throw E(409, "Продавец временно не принимает заказы: администрация проверяет его сделки");
       const fr = await hooks.fraudCheck?.(c, o);
       if (fr) { const f = await hooks.flagOrder(c, o, fr); return { review: true, kyc: f.kyc, note: f.note, buyer: o.buyer_id, order: o.id, number: o.number }; }
       if (o.promo_id) { const bad = await promoCheck(c, o.promo_id, o.buyer_id, o.id, Number(o.total_cents) + Number(o.discount_cents)); if (bad) throw E(409, "Промокод больше не действует: " + PERR[bad] + ". Уберите его и оплатите снова"); await c.query("insert into promo_uses(promo_id,user_id,order_id,discount_cents) values($1,$2,$3,$4) on conflict do nothing", [o.promo_id, o.buyer_id, o.id, o.discount_cents]); await c.query("update promo_codes set uses=uses+1 where id=$1", [o.promo_id]); }
@@ -151,7 +157,7 @@ export default function routes5(app, { q, pool, tx, E, wrap, need, hooks, pushUs
     res.json({ ok: true, number: paid.number, conversation: paid.conv });
   }));
   // выплаты: заявки обрабатывает администратор вручную
-  app.get("/api/admin/withdrawals", need, adm, wrap(async (_req, res) => res.json(await q("select w.id,w.amount,w.fee,w.method,w.details,w.status,w.note,w.created_at,u.username from withdrawals w join users u on u.id=w.user_id order by (w.status='pending') desc, w.created_at desc limit 100"))));
+  app.get("/api/admin/withdrawals", need, adm, wrap(async (_req, res) => res.json(await q("select w.id,w.amount,w.fee,w.method,w.details,w.status,w.note,w.created_at,w.holder,w.flags,u.username,u.id_name,(u.id_verified_at is not null) verified from withdrawals w join users u on u.id=w.user_id order by (w.status='pending') desc, w.created_at desc limit 100"))));
   app.post("/api/admin/withdrawals/:id", need, adm, wrap(async (req, res) => {
     if (!uuid(req.params.id)) throw E(404, "not found"); const act = req.body?.action, note = String(req.body?.note || "").slice(0, 300);
     if (!["paid", "reject", "processing"].includes(act)) throw E(400, "bad action");

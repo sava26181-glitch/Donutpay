@@ -91,6 +91,8 @@ export default function routes13(app, { q, tx, E, wrap, need, hooks, pushUser })
     if (!uuid(req.params.id)) throw E(404, "not found");
     const act = String(req.body?.action || ""), note = String(req.body?.note || "").slice(0, 300);
     if (!["approve", "reject"].includes(act)) throw E(400, "bad action"); if (act === "reject" && note.trim().length < 3) throw E(400, "Укажите причину отказа");
+    const idName = String(req.body?.name || "").replace(/[\u0000-\u001f<>]/g, "").replace(/\s+/g, " ").trim().slice(0, 80);
+    if (act === "approve" && !(/^[A-Za-zА-Яа-яЁё][A-Za-zА-Яа-яЁё .'-]+$/.test(idName) && idName.split(" ").length >= 2)) throw E(400, "Впишите фамилию и имя по паспорту");
     const out = await tx(async c => {
       const { rows: [k] } = await c.query("select * from kyc_requests where id=$1 for update", [req.params.id]); if (!k) throw E(404, "not found");
       if (k.status !== "submitted") throw E(409, "Видео ещё не загружено или проверка уже закрыта");
@@ -102,7 +104,7 @@ export default function routes13(app, { q, tx, E, wrap, need, hooks, pushUser })
         else await c.query("update orders set review_status='rejected' where id=$1", [k.order_id]); }
       let released = 0;
       if (act === "approve") { // личность подтверждена: выводить можно сразу, текущие холды по времени снимаются
-        await c.query("update users set id_verified_at=now() where id=$1 and id_verified_at is null", [k.user_id]);
+        await c.query("update users set id_verified_at=coalesce(id_verified_at,now()),id_name=$2 where id=$1", [k.user_id, idName]);
         released = (await c.query("update holds set status='released',closed_at=now() where user_id=$1 and status='held' and reason='hold72'", [k.user_id])).rowCount;
       }
       const { rows: [n] } = await c.query("insert into notifications(user_id,type,payload) values($1,$2,$3) returning id,payload", [k.user_id, act === "approve" ? "kyc_ok" : "kyc_no", { order_id: k.order_id || undefined, number, note }]);
