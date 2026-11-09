@@ -8,9 +8,10 @@
     ["tickets", "Обращения ждут ответа", "/admin?tab=tickets"],
     ["reports", "Жалобы", "/admin?tab=reports"],
     ["tournaments", "Турниры идут: подвести итог", "/tournaments"],
-    ...(ad ? [["withdrawals", "Выводы в обработке", "/admin?tab=withdrawals"]] : [])
+    ...(ad ? [["kyc", "Видео-верификация: проверить", "/admin?tab=kyc"], ["withdrawals", "Выводы в обработке", "/admin?tab=withdrawals"]] : [])
   ].map(r => ({ k: r[0], t: r[1], h: r[2], n: +c[r[0]] || 0 }));
-  const tabsHtml = t => `<div class="tabs">${[["home", "Что проверить"], ["listings", "Объявления"], ["users", "Пользователи"], ["orders", "Заказы"], ["disputes", "Споры"], ["tickets", "Обращения"], ["reports", "Жалобы"], ["more", "Ещё"]].map(x => `<a class="${t === x[0] ? "on" : ""}" onclick="go('/admin?tab=${x[0]}')">${x[1]}</a>`).join("")}</div>`;
+  const tabsHtml = t => `<div class="tabs">${[["home", "Что проверить"], ["listings", "Объявления"], ["users", "Пользователи"], ["orders", "Заказы"], ["disputes", "Споры"], ["tickets", "Обращения"], ["reports", "Жалобы"], ...(["admin", "owner"].includes(ME.role) ? [["kyc", "Верификация"]] : []), ["more", "Ещё"]].map(x => `<a class="${t === x[0] ? "on" : ""}" onclick="go('/admin?tab=${x[0]}')">${x[1]}</a>`).join("")}</div>`;
+  window.adTabs = tabsHtml;
   window.adHomeLoad = async () => {
     const c = await api("/admin/counts").catch(() => ({})), ad = ["admin", "owner"].includes(ME.role), rows = ROWS(c, ad), todo = rows.filter(r => r.n > 0), done = rows.filter(r => !r.n);
     const row = r => `<div class="card adq${r.n ? " has" : ""}" data-nofilter="1" onclick="go('${r.h}')"><b class="adn">${r.n}</b><span>${r.t}</span><i>›</i></div>`;
@@ -27,6 +28,7 @@
     const t = new URLSearchParams(location.hash.split("?")[1] || "").get("tab") || "home";
     if (t === "home") return window.adHomeLoad();
     if (t === "reports") return window.adReports();
+    if (t === "kyc" && ["admin", "owner"].includes(ME.role)) return window.adKyc();
     const h = await orig();
     return typeof h === "string" ? h.replace(/>Обзор<\/a>/, ">Что проверить</a>").replace(/(onclick="go\('\/admin\?tab=tickets'\)">Обращения<\/a>)/, `$1<a onclick="go('/admin?tab=reports')">Жалобы</a>`) : h;
   };
@@ -37,7 +39,7 @@
   new MutationObserver(() => { if (window.ADM_N > 0 && !document.querySelector(".admn")) mark(window.ADM_N) }).observe(document.body, { childList: true, subtree: true });
 })();
 
-// v66: вход и регистрация через Google
+// v67: вход и регистрация через Google
 (() => {
   const cid = () => (typeof SITE_CFG !== "undefined" && SITE_CFG && SITE_CFG.google) || "";
   const oa = window.auth;
@@ -110,25 +112,32 @@
   };
 })();
 
-// v66: профиль: строка с рейтингом, ролью и датой регистрации
-(() => {
-  let busy = 0;
-  const E_ = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-  const fill = async () => {
-    const m = /^#\/(?:u|shop)\/([^/?]+)/.exec(location.hash), cb = document.querySelector("#app .pf .ph");
-    if (!m || !cb || document.querySelector("#app .pf .pinfo") || busy || /tab=edit/.test(location.hash)) return; busy = 1;
-    try {
-      const u = await api("/users/" + m[1]), cur = document.querySelector("#app .pf .ph"); if (!cur || document.querySelector("#app .pf .pinfo")) return;
-      const bits = [];
-      if (u.rating) bits.push(`<span><b>${(+u.rating).toFixed(1)}</b> рейтинг, ${u.reviews} ${u.reviews % 10 === 1 && u.reviews % 100 !== 11 ? "отзыв" : [2, 3, 4].includes(u.reviews % 10) && ![12, 13, 14].includes(u.reviews % 100) ? "отзыва" : "отзывов"}</span>`);
-      else bits.push(`<span>Пока без отзывов</span>`);
-      if (u.is_seller) bits.push(`<span>${u.seller_verified ? "Проверенный продавец" : "Продавец"}</span>`);
-      if (u.created_at) bits.push(`<span>На сайте с ${new Date(u.created_at).toLocaleDateString("ru-RU", { month: "long", year: "numeric" })}</span>`);
-      cur.insertAdjacentHTML("afterend", `<div class="pinfo"><div class="pmeta">${bits.join("")}</div>${u.bio ? `<p class="pbio">${E_(u.bio).slice(0, 220)}</p>` : ""}</div>`);
-    } catch { } finally { busy = 0 }
-  };
-  new MutationObserver(() => { setTimeout(fill, 30) }).observe(document.body, { childList: true, subtree: true });
-})();
-
 // v66: настоящие причины ошибок по-русски
 try{Object.assign(ERR,{"sign seller code first": "Сначала подпишите Кодекс продавца: меню, раздел «Кодекс продавца»", "seller verification required": "Нужна верификация продавца: меню, раздел «Верификация продавца»", "become a seller first": "Сначала включите режим продавца в профиле", "unknown game or category": "Выберите игру и категорию из списка", "unknown category": "Такой категории нет", "category not available for this game": "Для этой игры нельзя выбрать такую категорию", "bad image": "Картинка не найдена на сервере: загрузите её заново", "bad upload": "Файл не удалось загрузить: выберите картинку png, jpeg, webp или gif", "bad media": "Картинка не найдена: загрузите её заново", "file too large": "Файл слишком большой: максимум 5 МБ", "only png, jpeg, webp, gif": "Допустимы только png, jpeg, webp и gif", "gif only for cover": "GIF можно использовать только для обложки", "media limit reached": "Загружено слишком много картинок. Удалите ненужные объявления", "too many uploads": "Слишком много загрузок подряд, подождите минуту", "not found": "Не найдено", "forbidden": "Недостаточно прав для этого действия", "invalid input": "Проверьте введённые данные: какое-то поле заполнено неверно", "listing unavailable": "Объявление недоступно", "listing not active": "Объявление сейчас не опубликовано", "own listing": "Нельзя купить своё объявление", "not enough stock": "Столько товара нет в наличии", "no stock": "Товар закончился", "not enough funds": "Недостаточно средств на балансе", "bad quantity": "Количество: целое число от 1 до 1000", "body 1-2000 chars": "Сообщение должно быть от 1 до 2000 символов", "too many new chats": "Слишком много новых чатов за короткое время", "account blocked": "Аккаунт заблокирован", "blocked": "Аккаунт заблокирован", "email or username taken": "Такая почта или имя пользователя уже заняты", "wrong email or password": "Неверная почта или пароль", "weak password": "Пароль слишком простой: минимум 8 символов", "bad email": "Проверьте адрес почты", "bad username": "Имя пользователя: 3–24 символа, буквы, цифры, точка, дефис, подчёркивание", "telegram taken": "Этот Telegram уже привязан к другому аккаунту", "wrong code": "Код неверный или устарел. Получите новый в боте", "bad code": "Код должен состоять из 6 символов", "verification unavailable": "Верификация временно недоступна", "telegram unavailable": "Telegram сейчас недоступен", "too many attempts": "Слишком много попыток. Подождите немного", "reason too short": "Опишите причину подробнее: минимум 5 символов", "ticket closed": "Обращение закрыто", "order cancelled": "Заказ отменён", "already processed": "Уже обработано", "transition not allowed": "Это действие сейчас недоступно для заказа", "dispute closed": "Спор уже закрыт", "dispute not available": "Спор по этому заказу открыть нельзя", "translation failed": "Не удалось перевести, попробуйте позже", "cooldown 6h": "Это действие доступно раз в 6 часов", "duel limit: one per 24h": "Дуэль можно создать раз в 24 часа"})}catch{}
+
+// v67: элементы шапки профиля не выходят за карточку (при перетаскивании и на любой ширине экрана) + кнопки «По центру»
+(() => {
+  const parse = el => { const m = /translate:\s*(-?[\d.]+)px\s+(-?[\d.]+)px/.exec(el.getAttribute("style") || ""); return m ? { x: +m[1], y: +m[2] } : { x: 0, y: 0 } };
+  const put = (el, p) => { el.style.translate = Math.round(p.x) + "px " + Math.round(p.y) + "px" };
+  const fit = el => {
+    const pf = el.closest(".pf"); if (!pf) return null; const r = el.getBoundingClientRect(), b = pf.getBoundingClientRect(); if (!r.width) return null;
+    let dx = 0, dy = 0; if (r.left < b.left + 6) dx = b.left + 6 - r.left; else if (r.right > b.right - 6) dx = b.right - 6 - r.right;
+    if (r.top < b.top + 6) dy = b.top + 6 - r.top; else if (r.bottom > b.bottom - 6) dy = b.bottom - 6 - r.bottom;
+    if (!dx && !dy) return null; const p = parse(el); const n = { x: p.x + dx, y: p.y + dy }; put(el, n); return n;
+  };
+  document.addEventListener("pointermove", e => { if (!e.buttons || typeof PV === "undefined" || !PV.pos) return; document.querySelectorAll("#pvw [data-drag]").forEach(x => { const n = fit(x); if (n && PV.pos[x.dataset.drag]) PV.pos[x.dataset.drag] = { x: Math.round(n.x), y: Math.round(n.y) } }) });
+  document.addEventListener("pointerup", () => { document.querySelectorAll("#pvw [data-drag]").forEach(x => { const n = fit(x); if (n && typeof PV !== "undefined" && PV.pos && PV.pos[x.dataset.drag]) PV.pos[x.dataset.drag] = { x: Math.round(n.x), y: Math.round(n.y) } }) });
+  const sweep = () => document.querySelectorAll(".pf [style*='translate:']").forEach(el => { if (!el.closest("#pvw")) fit(el) });
+  let t = 0; const later = () => { clearTimeout(t); t = setTimeout(() => requestAnimationFrame(sweep), 80) };
+  new MutationObserver(later).observe(document.body, { childList: true, subtree: true }); addEventListener("resize", later); addEventListener("load", later);
+  window.pvCenter = k => {
+    const el = document.querySelector(`#pvw [data-drag="${k}"]`), pf = el && el.closest(".pf"); if (!el || typeof PV === "undefined") return;
+    el.style.translate = "0px " + (parse(el).y) + "px"; const r = el.getBoundingClientRect(), b = pf.getBoundingClientRect(), x = Math.round((b.left + b.width / 2) - (r.left + r.width / 2));
+    PV.pos = PV.pos || {}; let p = { x, y: parse(el).y }; put(el, p); const av = k !== "avatar" && document.querySelector('#pvw [data-drag="avatar"]');
+    if (av) { const a = av.getBoundingClientRect(), n = el.getBoundingClientRect(); if (n.left < a.right && n.right > a.left && n.top < a.bottom && n.bottom > a.top) { p = { x, y: p.y + (a.bottom - n.top) + 6 }; put(el, p) } }
+    PV.pos[k] = p; const f = fit(el); if (f) PV.pos[k] = { x: Math.round(f.x), y: Math.round(f.y) };
+  };
+  window.pvReset = () => { if (typeof PV === "undefined") return; PV.pos = {}; document.querySelectorAll("#pvw [data-drag]").forEach(el => { el.style.translate = "" }) };
+  const oe = window.profileEdit || null;
+  new MutationObserver(() => { const w = document.getElementById("pvw"); if (w && !document.getElementById("pvt") && w.querySelector("[data-drag]")) w.insertAdjacentHTML("afterend", `<div class="pvt" id="pvt"><span>Положение:</span><button class="btn sm" onclick="pvCenter('avatar')">Аватар по центру</button><button class="btn sm" onclick="pvCenter('nick')">Ник по центру</button><button class="btn sm" onclick="pvReset()">Сбросить</button></div>`) }).observe(document.body, { childList: true, subtree: true });
+})();

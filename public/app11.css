@@ -195,9 +195,7 @@ body.kbf #app{padding-bottom:calc(var(--kbh,0px) + 90px)}
 body.typing:not(.inchat) .abar{bottom:calc(var(--kbh,0px) + 6px)}
 .abar .btn{width:100%;margin:0}
 
-/* v66: вход через Google */
-.au-or{display:flex;align-items:center;gap:12px;margin:16px 0 12px;color:var(--m);font-size:12px}.au-or:before,.au-or:after{content:"";flex:1;height:1px;background:var(--b)}
-.gbtn{display:flex;justify-content:center;min-height:44px}
+
 .ntc{display:flex;flex-direction:column;gap:6px}.ntp{margin:2px 0 8px;color:var(--m);font-size:13.5px}.ntsw{display:flex;align-items:center;gap:10px;font-weight:600;cursor:pointer}.ntsw input{width:18px;height:18px;accent-color:var(--p)}
 
 /* v66: поддержка */
@@ -212,22 +210,26 @@ body.typing:not(.inchat) .abar{bottom:calc(var(--kbh,0px) + 6px)}
 .tkm{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}.tkm b{font-size:15px;font-weight:600;overflow-wrap:anywhere}.tkm small{color:var(--m);font-size:12.5px}.tkr em{font-style:normal;font-size:12.5px;color:var(--m);text-align:right}
 .tke{color:var(--m);padding:14px 2px;font-size:14px}
 
-/* v66: профиль */
-#app .pf{border-radius:18px;background:var(--c);padding-bottom:16px}
-#app .pf .cv{height:112px;background:linear-gradient(160deg,color-mix(in srgb,var(--pa,var(--p)) 34%,var(--c)),var(--c) 92%)}
-#app .pf .cv i{opacity:.35}
-#app .pf .ph{margin-top:-44px;gap:14px;padding:0 16px;align-items:flex-end}
-#app .pf .av2{width:88px;height:88px;box-shadow:0 0 0 4px var(--c)}
-#app .pf .nick{font-size:22px;letter-spacing:-.01em}
-#app .pf .cb{min-width:0;padding-bottom:2px}
-.pinfo{padding:12px 16px 0}.pmeta{display:flex;flex-wrap:wrap;gap:4px 14px;margin:0;font-size:12.5px;color:var(--m)}.pmeta b{color:var(--t);font-weight:700}
-.pbio{margin:8px 0 0;font-size:13.5px;line-height:1.45;color:var(--t);opacity:.82;overflow-wrap:anywhere}
-#app .tabs.tw{display:block;margin:0 0 12px;padding:0;border:0}
-#app .tabs.tw a{display:block;text-align:center;background:#fff;color:#14141a;border:0;border-radius:12px;padding:12px 16px;font-weight:700;font-size:14.5px}
-#app .tabs.tw a.on{background:#fff;color:#14141a}
-#app .tabs.t3c{display:flex;gap:0;border-bottom:1px solid var(--b);margin:14px 0 14px;padding:0;background:none}
-#app .tabs.t3c a{flex:1;text-align:center;background:none!important;border:0!important;border-radius:0;padding:12px 6px;color:var(--m);font-weight:600;font-size:14.5px;border-bottom:2px solid transparent!important;margin-bottom:-1px;white-space:nowrap}
-#app .tabs.t3c a.on{color:var(--t);border-bottom-color:var(--pa,var(--p))!important}
-.pma .btn{border-radius:12px}
+/* профиль: текст «Редактировать профиль» белый */
+#app .tabs.tw a,#app .tabs.tw a.on{color:#fff!important}
 
 .tkf .abar{background:linear-gradient(to top,var(--c) 70%,transparent)}
+
+/* вход через Google */
+.au-or{display:flex;align-items:center;gap:12px;margin:16px 0 12px;color:var(--m);font-size:12px}.au-or:before,.au-or:after{content:"";flex:1;height:1px;background:var(--b)}
+.gbtn{display:flex;justify-content:center;min-height:44px}
+
+/* вкладка «О пользователе» */
+.abo{padding:4px 2px}.abk{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--m);font-weight:700;margin:0 0 10px}
+.abb{margin:0 0 20px;padding-left:14px;border-left:3px solid var(--pa,var(--p));font-size:16.5px;line-height:1.55;overflow-wrap:anywhere;white-space:pre-line}.abb.no{color:var(--m);font-size:15px}
+.abg{margin:0;border-top:1px solid var(--b)}.abr{display:flex;justify-content:space-between;align-items:baseline;gap:16px;padding:13px 0;border-bottom:1px solid var(--b)}
+.abr dt{color:var(--m);font-size:14px}.abr dd{margin:0;font-weight:700;font-size:15px;text-align:right;overflow-wrap:anywhere}.abr dd span{font-weight:500;color:var(--m);font-size:13px;margin-left:8px}
+.abo .abm{margin-top:18px}
+.pvt{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:10px 0 0;font-size:13px;color:var(--m)}
+
+/* v68: подтверждение покупки и видео-верификация */
+.ckok{display:flex;gap:10px;align-items:flex-start;margin-top:12px;font-size:14px;line-height:1.35;cursor:pointer}
+.ckok input{width:20px;height:20px;margin:1px 0 0;flex:none;accent-color:#7a58ee}
+.kyc-how{margin:0 0 12px;padding-left:20px;font-size:14px;line-height:1.5;color:var(--m,#b9a9f0)}
+.kyc-how li{margin:2px 0}
+.kyc-ok{border-color:#2a7a52}

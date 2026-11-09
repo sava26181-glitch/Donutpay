@@ -202,9 +202,11 @@ async function msgs(cid) {
 function aboutExtra(u) {
   const st = u.stats || {}, since = new Date(u.created_at).toLocaleDateString("ru-RU", { month: "long", year: "numeric" }).replace(/\s?г\.?$/, "");
   const rs = st.resp_sec, resp = rs == null ? "Нет данных" : rs < 60 ? "до минуты" : rs < 3600 ? "около " + Math.round(rs / 60) + " мин" : rs < 86400 ? "около " + Math.round(rs / 3600) + " ч" : "более суток";
-  const cell = (l, v) => `<div class="abc"><small>${l}</small><b>${v}</b></div>`;
+  const n = Number(u.reviews || 0), rv = n % 10 === 1 && n % 100 !== 11 ? "отзыв" : [2, 3, 4].includes(n % 10) && ![12, 13, 14].includes(n % 100) ? "отзыва" : "отзывов";
+  const row = (l, v) => `<div class="abr"><dt>${l}</dt><dd>${v}</dd></div>`;
+  const rows = [u.rating ? row("Рейтинг", `${(+u.rating).toFixed(1)}<span>${n} ${rv}</span>`) : row("Рейтинг", "<span>Пока без отзывов</span>"), u.is_seller ? row("Продано товаров", Number(st.sold || 0).toLocaleString("ru-RU")) : "", u.is_seller ? row("Отвечает", resp) : "", row("На сайте с", esc(since)), u.is_seller ? row("Статус", u.seller_verified ? "Проверенный продавец" : "Продавец") : ""].join("");
   const msg = u.is_self ? "" : `<button class="btn pri abm" onclick="${ME ? `dm('${esc(u.username)}')` : "NEXT='/u/" + encodeURIComponent(u.username) + "';go('/login')"}">${u.is_seller ? "Написать продавцу" : "Написать"}</button>`;
-  return `<div class="card abt">${cell("Продано товаров", Number(st.sold || 0).toLocaleString("ru-RU"))}${cell("На сайте с", esc(since))}${cell("Скорость ответа", resp)}</div>${msg}`;
+  return `<section class="abo"><div class="abk">${u.is_seller ? "О продавце" : "О пользователе"}</div><p class="abb${u.bio ? "" : " no"}">${u.bio ? esc(u.bio) : "Пользователь пока ничего не рассказал о себе."}</p><dl class="abg">${rows}</dl>${msg}</section>`;
 }
 
 // ---- плашка роли в лотах/списках: владелец не показывается, админ и модератор показываются
@@ -333,7 +335,7 @@ const ckSteps = n => `<div class="cks">${["Оплата", "Выдача това
 const payConfirm = act(async id => {
   need(); const [o, f] = await Promise.all([api("/orders/" + id), api("/finance")]), sum = o.total_cents / 100, left = f.balance - sum, enough = left >= 0;
   if (o.status !== "pending_payment") throw new Error("Заказ уже не ждёт оплаты");
-  window._pay = { id, need: Math.ceil(-left), test: f.test_mode };
+  window._pay = { id, need: Math.ceil(-left), test: f.test_mode, title: o.title, seller: o.seller_name, sum, qty: o.quantity, hold: f.hold_hours || 72 };
   const unit = o.unit_price_cents / 100;
   const pr = o.promo, pct = pr && pr.kind === "percent" ? +pr.value : 0, gross = (+o.unit_price_cents * o.quantity) / 100;
   const pBtn = enough ? `<button class="btn pri big" style="width:100%" onclick="payDo()">Оплатить ${fm(sum)}</button>` : f.test_mode ? `<div class="ckw">Не хватает ${fm(-left)}</div><button class="btn pri big" style="width:100%" onclick="payTop()">Пополнить на ${fm(Math.max(10, window._pay.need))} и оплатить</button>` : `<button class="btn big" style="width:100%" onclick="$('#md').remove();go('/finance')">Перейти в финансы</button>`;
@@ -343,9 +345,22 @@ ${pr ? `<div class="ckpr"><span><b>${esc(pr.code)}</b>${pct ? ` · скидка 
 <div class="cksum"><div><span>Цена${o.quantity > 1 ? " × " + o.quantity : ""}</span><b>${fm(gross)}</b></div>${o.discount_cents > 0 ? `<div><span>Скидка${pct ? " " + pct + "%" : ""}</span><b class="okt">−${fm(o.discount_cents / 100)}</b></div>` : ""}<div><span>Способ оплаты</span><b>Баланс DonutPay</b></div><div><span>Ваш баланс</span><b>${fm(f.balance)}</b></div><div class="tot"><span>К оплате</span><b>${fm(sum)}</b></div></div>
 <div class="ckg">${ic4("shield", 18)}<p>Деньги у продавца только после того, как вы подтвердите получение товара. При споре их вернёт модератор.${f.test_mode ? " Баланс тестовый: реальные деньги не списываются, оплата картой и СБП появится позже." : ""}</p></div>${pBtn}`);
 });
+// шаг 1: подтверждение покупки (без него сервер не спишет деньги)
 const payDo = act(async () => {
+  const p = window._pay; if (!p) return;
+  $("#md")?.remove();
+  mdl(`<div class="ckh"><div><h3>Подтвердите покупку</h3><small class="m">Проверьте данные перед оплатой</small></div></div>
+<div class="cksum"><div><span>Товар</span><b style="text-align:right;overflow-wrap:anywhere">${esc(p.title || "")}${p.qty > 1 ? " × " + p.qty : ""}</b></div><div><span>Продавец</span><b>${esc(p.seller || "")}</b></div><div class="tot"><span>Спишется с баланса</span><b>${fm(p.sum)}</b></div></div>
+<div class="ckg">${ic4("shield", 18)}<p>Продавец получит деньги только после того, как вы подтвердите получение. Если что-то пойдёт не так, откройте спор, и деньги вернёт модератор. Вернуть оплату после подтверждения получения нельзя.</p></div>
+<label class="ckok"><input type="checkbox" id="pcf" onchange="$('#pgo').disabled=!this.checked"><span>Я проверил товар и сумму и подтверждаю покупку</span></label>
+<button class="btn pri big" id="pgo" style="width:100%;margin-top:12px" disabled onclick="payGo()">Подтвердить и оплатить</button>`);
+});
+// шаг 2: оплата. Сервер может заморозить заказ и попросить видео-верификацию
+const payGo = act(async () => {
   if (window._paying) return; window._paying = 1; const id = window._pay.id;
-  try { const r = await api(`/orders/${id}/pay-balance`, { method: "POST" }); $("#md")?.remove(); mdl(`<div style="text-align:center"><div class="okc">✓</div><h3 style="margin:8px 0 2px">Оплата прошла</h3><p class="m" style="margin:0 0 10px">Заказ #${esc(r.number || "")} оплачен ${new Date().toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</p></div>${ckSteps(1)}<button class="btn pri big" style="width:100%;margin-top:14px" onclick="$('#md').remove();go('/order/${id}')">Перейти к заказу</button>`); SFX.play && SFX.play("ok") }
+  try { const r = await api(`/orders/${id}/pay-balance`, { method: "POST", body: { confirm: true } }); $("#md")?.remove();
+    if (r.review_required) { window.kycModal ? window.kycModal(r) : toast("Заказ на проверке: нужна видео-верификация"); return }
+    mdl(`<div style="text-align:center"><div class="okc">✓</div><h3 style="margin:8px 0 2px">Оплата прошла</h3><p class="m" style="margin:0 0 10px">Заказ #${esc(r.number || "")} оплачен ${new Date().toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</p></div>${ckSteps(1)}<button class="btn pri big" style="width:100%;margin-top:14px" onclick="$('#md').remove();go('/order/${id}')">Перейти к заказу</button>`); SFX.play && SFX.play("ok") }
   finally { window._paying = 0 }
 });
 const payTop = act(async () => { if (window._paying) return; window._paying = 1; try { await api("/finance/topup", { method: "POST", body: { amount: Math.max(10, window._pay.need) } }) } finally { window._paying = 0 } await payConfirm(window._pay.id) });
