@@ -1,8 +1,8 @@
 // v66: уведомления о новых сообщениях чата в Telegram через отдельного бота (NOTIFY_BOT_TOKEN, NOTIFY_BOT_USERNAME, NOTIFY_WEBHOOK_SECRET)
 import crypto from "node:crypto";
 export default function routes12(app, { q, E, wrap, need, hooks, online }) {
-  const env = process.env, TOK = (env.NOTIFY_BOT_TOKEN || "").trim(), BN = (env.NOTIFY_BOT_USERNAME || "donutvolume").replace(/^@/, "").trim(), SEC = (env.NOTIFY_WEBHOOK_SECRET || "").trim();
-  const API = String(env.TELEGRAM_API_BASE || "https://api.telegram.org").replace(/\/+$/, ""), base = (env.SITE_URL || env.RENDER_EXTERNAL_URL || "").replace(/\/$/, "");
+  const env = process.env, TOK = (env["NOTIFY_BOT_TOKEN"] || "").trim(), BN = (env["NOTIFY_BOT_USERNAME"] || "donutvolume").replace(/^@/, "").trim(), SEC = (env["NOTIFY_WEBHOOK_SECRET"] || "").trim();
+  const API = String(env["TELEGRAM_API_BASE"] || "https://api.telegram.org").replace(/\/+$/, ""), base = (env["SITE_URL"] || env["RENDER_EXTERNAL_URL"] || "").replace(/\/$/, "");
   const on = !!TOK, hash = t => crypto.createHash("sha256").update(t).digest("hex");
   const send = async (chat, text, extra) => {
     const r = await fetch(`${API}/bot${TOK}/sendMessage`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ chat_id: chat, text, disable_web_page_preview: true, ...extra }), signal: AbortSignal.timeout(8000) });
@@ -40,6 +40,8 @@ export default function routes12(app, { q, E, wrap, need, hooks, online }) {
   }));
   // отправка уведомления о сообщении (не чаще раза в минуту на переписку, только если получателя нет на сайте)
   const last = new Map();
+  // важные события аккаунта (вход с нового устройства): приходят, даже если человек на сайте
+  hooks.notifyTg = async (toId, text) => { try { if (!on) return; const [u] = await q("select tg_notify_id from users where id=$1 and tg_notify_on and tg_notify_id is not null", [toId]); if (u) await send(u.tg_notify_id, text); } catch (e) { console.warn("[notify] не отправлено:", e.message); } };
   hooks.notifyChat = async (toId, fromName, text, convId) => {
     try {
       if (!on || online?.(toId)) return;

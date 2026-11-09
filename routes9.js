@@ -1,7 +1,7 @@
 // v24: безопасность аккаунта — смена пароля и двухэтапная аутентификация (TOTP)
 import bcrypt from "bcryptjs"; import rateLimit from "express-rate-limit";
 import { newSecret, otpUri, verifyTotp, skewOf, newBackupCodes, hashBackup } from "./totp.js"; import { mailConfigured, sendMail, mailErr } from "./mailer.js";
-export default function routes9(app, { q, E, wrap, need, twofaCheck }) {
+export default function routes9(app, { q, E, wrap, need, twofaCheck, hooks = {} }) {
   const audit = (a, act, tt, tid, d) => q("insert into audit_log(actor_id,action,target_type,target_id,details) values($1,$2,$3,$4,$5)", [a, act, tt, String(tid ?? ""), d || {}]).catch(() => {});
   const rl = rateLimit({ windowMs: 15 * 60e3, limit: 20 });
   app.get("/api/me/security", need, wrap(async (req, res) => {
@@ -11,9 +11,11 @@ export default function routes9(app, { q, E, wrap, need, twofaCheck }) {
   app.post("/api/me/password", need, rl, wrap(async (req, res) => {
     const cur = String(req.body?.current || ""), pw = String(req.body?.password || "");
     if (pw.length < 8 || pw.length > 200) throw E(400, "password too short");
-    const [u] = await q("select password_hash from users where id=$1", [req.user.id]);
+    const [u] = await q("select password_hash,username,email from users where id=$1", [req.user.id]);
     if (!u || !(await bcrypt.compare(cur, u.password_hash))) throw E(403, "wrong password");
+    hooks.weakPw?.(pw, u.username, u.email);
     await q("update users set password_hash=$2 where id=$1", [req.user.id, await bcrypt.hash(pw, 10)]);
+    if (hooks.bumpTokens) { const v = await hooks.bumpTokens(req.user.id); hooks.setCookie?.(res, req.user.id, v); } // другие устройства выходят
     audit(req.user.id, "password_change", "user", req.user.id); res.json({ ok: true });
   }));
   app.post("/api/me/2fa/setup", need, rl, wrap(async (req, res) => {

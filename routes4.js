@@ -252,10 +252,11 @@ export default function routes4(app, { q, pool, tx, E, wrap, need, pushUser, L, 
   app.post("/api/auth/reset/confirm", rl, wrap(async (req, res) => {
     const email = String(req.body?.email || "").trim().toLowerCase(), code = String(req.body?.code || "").trim().toUpperCase().replace(/\s/g, ""), pw = String(req.body?.password || "");
     if (pw.length < 8) throw E(400, "password too short");
-    const [u] = await q("select id from users where email=$1", [email]); const bad = () => E(400, "invalid or expired code"); if (!u || !code) throw bad();
+    const [u] = await q("select id,username from users where email=$1", [email]); const bad = () => E(400, "invalid or expired code"); if (!u || !code) throw bad();
+    hooks.weakPw?.(pw, u.username, email);
     const [r] = await q("select id,code_hash,tries from pw_resets where user_id=$1 and used_at is null and expires_at>now() order by created_at desc limit 1", [u.id]); if (!r || r.tries >= 5) throw bad();
     if (r.code_hash !== h(code)) { await q("update pw_resets set tries=tries+1 where id=$1", [r.id]); throw bad(); }
-    await q("update users set password_hash=$2 where id=$1", [u.id, await bcrypt.hash(pw, 10)]); await q("update pw_resets set used_at=now() where user_id=$1 and used_at is null", [u.id]);
+    await q("update users set password_hash=$2 where id=$1", [u.id, await bcrypt.hash(pw, 10)]); await q("update pw_resets set used_at=now() where user_id=$1 and used_at is null", [u.id]); await hooks.bumpTokens?.(u.id);
     audit(u.id, "password_reset", "user", u.id); res.json({ ok: true });
   }));
   app.post("/api/admin/users/:username/reset-code", need, staff(...AD), wrap(async (req, res) => {
@@ -270,7 +271,7 @@ export default function routes4(app, { q, pool, tx, E, wrap, need, pushUser, L, 
     const e = process.env;
     const tk = (e.TIKTOK_URL || e.TIKTOK || "").trim(), tku = !tk ? "" : /^https?:\/\//i.test(tk) ? tk : "https://www.tiktok.com/@" + tk.replace(/^@/, "").replace(/^.*tiktok\.com\/@?/, "");
     const ch = (e.TG_CHANNEL || "").trim(), chu = !ch ? "" : /^https?:\/\//i.test(ch) ? ch : "https://t.me/" + ch.replace(/^@/, "").replace(/^t\.me\//, "");
-    return { google: (e.GOOGLE_CLIENT_ID || "").trim(), turnstile: turnstileSiteKey(), privacy_url: (e.PRIVACY_URL || "").trim(), terms_url: (e.TERMS_URL || "").trim(), support_tg: (e.SUPPORT_TG || "").replace(/^@/, "").trim(), support_email: (e.SUPPORT_EMAIL || "").trim(), channel: chu, tiktok: tku, operator: (e.OPERATOR_NAME || "").trim(), operator_info: (e.OPERATOR_INFO || "").trim(), law: (e.OPERATOR_LAW || "").trim(), inn: (e.OPERATOR_INN || "861103156153").replace(/\D/g, "").slice(0, 12) };
+    return { google: (e["GOOGLE_CLIENT_ID"] || "").trim(), turnstile: turnstileSiteKey(), privacy_url: (e.PRIVACY_URL || "").trim(), terms_url: (e.TERMS_URL || "").trim(), support_tg: (e.SUPPORT_TG || "").replace(/^@/, "").trim(), support_email: (e.SUPPORT_EMAIL || "").trim(), channel: chu, tiktok: tku, operator: (e.OPERATOR_NAME || "").trim(), operator_info: (e.OPERATOR_INFO || "").trim(), law: (e.OPERATOR_LAW || "").trim(), inn: (e.OPERATOR_INN || "861103156153").replace(/\D/g, "").slice(0, 12) };
   };
   hooks.siteConfig = siteCfg;
   app.get("/api/site-config", (_req, res) => res.json(siteCfg()));

@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import express from "express"; import helmet from "helmet"; import cookieParser from "cookie-parser";
-import SCHEMA from "./schema_bundle.js"; import rateLimit from "express-rate-limit"; import { shieldEarly, shieldRules, antibot } from "./shield.js"; import bcrypt from "bcryptjs"; import jwt from "jsonwebtoken";
-import { verifyTotp, skewOf, hashBackup } from "./totp.js"; import routes9 from "./routes9.js"; import routes10 from "./routes10.js"; import routes11 from "./routes11.js"; import routes12 from "./routes12.js"; import routes13 from "./routes13.js"; import routes14 from "./routes14.js";
+import SCHEMA from "./schema_bundle.js"; import rateLimit from "express-rate-limit"; import { shieldEarly, shieldRules, antibot, shieldGate } from "./shield.js"; import bcrypt from "bcryptjs"; import jwt from "jsonwebtoken";
+import { verifyTotp, skewOf, hashBackup } from "./totp.js"; import routes9 from "./routes9.js"; import routes10 from "./routes10.js"; import routes11 from "./routes11.js"; import routes12 from "./routes12.js"; import routes13 from "./routes13.js"; import routes14 from "./routes14.js"; import routes15 from "./routes15.js";
 import pg from "pg"; import routes2 from "./routes2.js"; import routes3 from "./routes3.js"; import routes7 from "./routes7.js";
 import wf from "./wordfilter.js"; import routes8 from "./routes8.js"; import routes6 from "./routes6.js"; import sysmsg from "./sysmsg.js"; import routes4 from "./routes4.js"; import routes5 from "./routes5.js"; import { makeBadges } from "./badges.js"; import fs from "fs"; import path from "path"; import { fileURLToPath } from "url";
 const dir = path.dirname(fileURLToPath(import.meta.url));
@@ -59,6 +59,7 @@ await step("schema_v30.sql", SCHEMA["schema_v30.sql"]);
 await step("schema_v31.sql", SCHEMA["schema_v31.sql"]);
 await step("schema_v32.sql", SCHEMA["schema_v32.sql"]);
 await step("schema_v33.sql", SCHEMA["schema_v33.sql"]);
+await step("schema_v34.sql", SCHEMA["schema_v34.sql"]);
 };
 try { await runSchema(); if (await grantOwner(process.env["OWNER_EMAIL"])) console.log("[owner] роль owner выдана:", process.env["OWNER_EMAIL"]); globalThis.__boot = "запуск сервера"; }
 catch (e) {
@@ -66,9 +67,9 @@ catch (e) {
   else throw new Error("База данных: " + (e.code || "") + " " + e.message);
 }
 
-const app = express(); app.set("trust proxy", 1); app.use(shieldEarly());
-app.use(helmet({ contentSecurityPolicy: { directives: { defaultSrc: ["'self'"], styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com", "https://accounts.google.com"], fontSrc: ["'self'", "data:", "https://fonts.gstatic.com"], mediaSrc: ["'self'", "blob:", "data:", "https://*.supabase.co"], scriptSrc: ["'self'", "'unsafe-inline'", "https://challenges.cloudflare.com", "https://accounts.google.com"], scriptSrcAttr: ["'unsafe-inline'"], imgSrc: ["'self'", "data:", "blob:", "https://*.supabase.co"], connectSrc: ["'self'", "https://challenges.cloudflare.com", "https://api.mymemory.translated.net", "https://accounts.google.com"], frameSrc: ["https://challenges.cloudflare.com", "https://accounts.google.com"], styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"] } } }));
-app.use(express.json({ limit: "50kb" })); app.use(cookieParser());
+const app = express(); app.set("trust proxy", 1); app.use(shieldEarly()); app.use(shieldGate());
+app.use(helmet({ contentSecurityPolicy: { directives: { defaultSrc: ["'self'"], styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com", "https://accounts.google.com"], fontSrc: ["'self'", "data:", "https://fonts.gstatic.com"], mediaSrc: ["'self'", "blob:", "data:", "https://*.supabase.co"], scriptSrc: ["'self'", "'unsafe-inline'", "https://challenges.cloudflare.com", "https://accounts.google.com"], scriptSrcAttr: ["'unsafe-inline'"], imgSrc: ["'self'", "data:", "blob:", "https://*.supabase.co"], connectSrc: ["'self'", "https://challenges.cloudflare.com", "https://api.mymemory.translated.net", "https://accounts.google.com"], frameSrc: ["https://challenges.cloudflare.com", "https://accounts.google.com"], objectSrc: ["'none'"], baseUri: ["'self'"], frameAncestors: ["'self'"] } } }));
+app.use(express.json({ limit: "50kb" })); app.use(cookieParser()); app.use((req, res, next) => hooks.csrf ? hooks.csrf(req, res, next) : next());
 // ---- реальное время для всех: после любого успешного изменения данных все открытые страницы получают сигнал «обновись»
 const liveC = new Set(), liveT = new Map();
 const live = (ev, d) => liveC.forEach(r => { try { r.write(`event: ${ev}\ndata: ${JSON.stringify(d || {})}\n\n`); } catch { } });
@@ -84,7 +85,7 @@ app.use("/api", (req, res, next) => {
     liveT.set(sc, setTimeout(() => { liveT.delete(sc); live("refresh", { s: sc }); }, 400));
   }); next();
 });
-const APP_VERSION = "v69";
+const APP_VERSION = "v70";
 app.get("/api/version", (_q, r) => { const h = f => { try { return crypto.createHash("sha1").update(fs.readFileSync(new URL(f, import.meta.url))).digest("hex").slice(0, 8); } catch { return null; } }; r.json({ version: APP_VERSION, files: { routes2: h("./routes2.js"), routes10: h("./routes10.js"), app: h("./app.js") } }); });
 const dbFp = async () => { const [d] = await q("select md5(current_database()||pg_postmaster_start_time()::text) f, now() n"); return { db: d.f.slice(0, 6), db_time: d.n }; };
 app.get("/api/diag", async (_q, r) => { try { r.json({ version: APP_VERSION, host: _q.headers["x-forwarded-host"] || _q.headers.host, server_time: new Date().toISOString(), ...(await dbFp()) }); } catch (e) { r.status(500).json({ error: "db" }); } });
@@ -94,8 +95,9 @@ const fpSeen = new Map();
 // v46: «онлайн» = человек недавно присылал сигнал активности (страница открыта и видна) или совершал действие
 const activeAt = new Map(), ONLINE_MS = 75000;
 setInterval(() => { const lim = Date.now() - 10 * 60e3; for (const [k, t] of activeAt) if (t < lim) activeAt.delete(k); }, 5 * 60e3).unref?.();
-app.use((req, _r, next) => {
+app.use(async (req, _r, next) => {
   try { req.user = jwt.verify(req.cookies.t, JWT_SECRET); } catch {}
+  if (req.user && hooks.tokVer) { try { if ((req.user.v || 0) !== await hooks.tokVer(req.user.id)) req.user = null; } catch { } } // сессия отозвана (смена пароля, «выйти везде»)
   if (req.user && req.method !== "GET" && req.method !== "HEAD" && req.method !== "OPTIONS" && req.path !== "/api/presence/off") activeAt.set(req.user.id, Date.now());
   // отпечатки для защиты дуэлей от накрутки: храним только хэши сети и устройства
   if (req.user && req.path.startsWith("/api/")) {
@@ -107,10 +109,10 @@ app.use((req, _r, next) => {
 app.use(shieldRules());
 const need = (req, res, next) => req.user ? next() : res.status(401).json({ error: "auth required" });
 const admin = wrap(async (req, res, next) => { const [u] = await q("select role from users where id=$1", [req.user.id]); ["admin", "owner"].includes(u?.role) ? next() : res.status(403).json({ error: "forbidden" }); });
-const setCookie = (res, id) => res.cookie("t", jwt.sign({ id }, JWT_SECRET, { expiresIn: "7d" }), { httpOnly: true, sameSite: "lax", secure: prod, maxAge: 7 * 864e5 });
+const setCookie = (res, id, v = 0) => res.cookie("t", jwt.sign({ id, v }, JWT_SECRET, { expiresIn: "7d" }), { httpOnly: true, sameSite: "lax", secure: prod, maxAge: 7 * 864e5 });
 const lim = rateLimit({ windowMs: 15 * 60e3, limit: 30 });
 const U = "id,public_id,username,email,role,is_seller,avatar_url,bio,seller_verified,avatar_media,cover_media,theme";
-const hooks = {}, B = makeBadges(q); hooks.live = live; hooks.dbFp = dbFp;
+const hooks = {}, B = makeBadges(q); hooks.live = live; hooks.dbFp = dbFp; hooks.setCookie = setCookie;
 // v44: лот ушёл на проверку: уведомление модераторам на сайте (колокольчик) и в Telegram-боте администратора
 hooks.premod = () => process.env["PREMODERATE_LISTINGS"] !== "false";
 hooks.modNotify = async (id, title, reason) => {
@@ -132,6 +134,7 @@ app.post("/api/auth/register", lim, antibot({ strictMail: true }), wrap(async (r
   if (!/^\S+@\S+\.\S+$/.test(email || "")) throw E(400, "bad email");
   if (!/^[\w.-]{3,24}$/.test(username || "")) throw E(400, "bad username");
   if ((password || "").length < 8) throw E(400, "weak password");
+  hooks.weakPw?.(password, username, email);
   await hooks.deviceGate?.(req);
   try { const [u] = await q(`insert into users(email,username,password_hash) values($1,$2,$3) returning ${U}`, [email.toLowerCase(), username, await bcrypt.hash(password, 10)]); if (await grantOwner(email)) u.role = "owner"; try { await hooks.syncAdminTg?.(); const [rr] = await q("select role from users where id=$1", [u.id]); if (rr) u.role = rr.role; } catch { } await hooks.deviceBind?.(req, u.id); setCookie(res, u.id); res.json(u); }
   catch (e) { if (e.code === "23505") throw E(409, "email or username taken"); throw e; }
@@ -162,7 +165,7 @@ app.post("/api/auth/login", lim, wrap(async (req, res) => {
     if (!code) return res.json({ need_2fa: true });
     if (!(await twofaCheck(u.id, code))) throw E(401, "wrong 2fa code");
   }
-  setCookie(res, u.id); const { password_hash, totp_secret, totp_backup, totp_enabled, totp_last_step, ...pub } = u; res.json(pub);
+  setCookie(res, u.id, u.token_ver || 0); await hooks.loginNotice?.(req, u); const { password_hash, totp_secret, totp_backup, totp_enabled, totp_last_step, token_ver, ...pub } = u; res.json(pub);
 }));
 // вход и регистрация через Google (Google Identity Services): токен проверяется у Google, клиентский ID в GOOGLE_CLIENT_ID
 app.post("/api/auth/google", lim, wrap(async (req, res) => {
@@ -185,7 +188,7 @@ app.post("/api/auth/google", lim, wrap(async (req, res) => {
     if (await grantOwner(email)) u.role = "owner"; try { await hooks.syncAdminTg?.(); } catch { }
     await hooks.deviceBind?.(req, u.id);
   }
-  setCookie(res, u.id); const { password_hash, totp_secret, totp_backup, totp_enabled, totp_last_step, ...pub } = u; res.json(pub);
+  setCookie(res, u.id, u.token_ver || 0); await hooks.loginNotice?.(req, u); const { password_hash, totp_secret, totp_backup, totp_enabled, totp_last_step, token_ver, ...pub } = u; res.json(pub);
 }));
 app.post("/api/auth/logout", (req, res) => { if (req.user) { subs.get(req.user.id)?.forEach(r => r.end()); subs.delete(req.user.id); lastSeen.delete(req.user.id); activeAt.delete(req.user.id); } res.setHeader("Cache-Control", "no-store"); res.cookie("t", "", { httpOnly: true, sameSite: "lax", secure: prod, path: "/", maxAge: 0, expires: new Date(0) }); res.clearCookie("t", { path: "/" }).json({ ok: true }); });
 app.get("/api/me", need, wrap(async (req, res) => { const [u] = await q(`select ${U},show_badges,blocked_until,block_reason,block_hours from users where id=$1`, [req.user.id]); u ? res.json(u) : res.status(401).json({ error: "auth required" }); }));
@@ -206,12 +209,13 @@ const r4 = routes4(app, { q, pool, tx, E, wrap, need, pushUser, hooks, L: { LCOL
 routes5(app, { q, pool, tx, E, wrap, need, hooks, pushUser });
 routes6(app, { q, pool, tx, E, wrap, need, hooks, pushUser });
 routes7(app, { q, pool, tx, E, wrap, need, hooks, pushUser });
-routes9(app, { q, E, wrap, need, twofaCheck });
+routes9(app, { q, E, wrap, need, twofaCheck, hooks });
 routes10(app, { q, tx, E, wrap, need, hooks });
 routes11(app, { q, tx, E, wrap, need });
 routes12(app, { q, E, wrap, need, hooks, online });
 routes13(app, { q, tx, E, wrap, need, hooks, pushUser });
 routes14(app, { q, E, wrap, need, hooks, pushUser });
+routes15(app, { q, E, wrap, need, hooks, pushUser });
 routes8(app, { q, pool, tx, E, wrap, need, hooks, pushUser, online: uid => online(uid), notifyStaff: t => r2.notifyStaff?.(t) });
 app.get("/api/listings", wrap(async (req, res) => {
   const { game, category, min, max, q: s, seller, sort, offset } = req.query, w = ["l.status='active'"], p = [];

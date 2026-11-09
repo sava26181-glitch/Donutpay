@@ -36,6 +36,7 @@ export default function routes14(app, { q, E, wrap, need, hooks, pushUser }) {
   // устройство = случайный ID из localStorage (заголовок X-Device), хэш считается так же, как в app.js для user_fp
   const fp = v => crypto.createHash("sha256").update(env["JWT_SECRET"] + "|" + v).digest("hex").slice(0, 32);
   const devOf = req => String(req.headers["x-device"] || "").slice(0, 64);
+  hooks.fpHash = fp;
   hooks.deviceGate = async req => {
     const dev = devOf(req); if (!dev) return;
     const [r] = await q("select count(distinct user_id)::int n from user_fp where kind='dev' and hash=$1", [fp(dev)]), max = CFG().perDevice;
