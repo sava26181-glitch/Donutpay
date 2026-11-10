@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import express from "express"; import helmet from "helmet"; import cookieParser from "cookie-parser";
 import SCHEMA from "./schema_bundle.js"; import rateLimit from "express-rate-limit"; import { shieldEarly, shieldRules, antibot, shieldGate } from "./shield.js"; import bcrypt from "bcryptjs"; import jwt from "jsonwebtoken";
-import { verifyTotp, skewOf, hashBackup } from "./totp.js"; import routes9 from "./routes9.js"; import routes10 from "./routes10.js"; import routes11 from "./routes11.js"; import routes12 from "./routes12.js"; import routes13 from "./routes13.js"; import routes14 from "./routes14.js"; import routes15 from "./routes15.js";
+import { verifyTotp, skewOf, hashBackup } from "./totp.js"; import routes9 from "./routes9.js"; import routes16 from "./routes16.js"; import routes10 from "./routes10.js"; import routes11 from "./routes11.js"; import routes12 from "./routes12.js"; import routes13 from "./routes13.js"; import routes14 from "./routes14.js"; import routes15 from "./routes15.js";
 import pg from "pg"; import routes2 from "./routes2.js"; import routes3 from "./routes3.js"; import routes7 from "./routes7.js";
 import wf from "./wordfilter.js"; import routes8 from "./routes8.js"; import routes6 from "./routes6.js"; import sysmsg from "./sysmsg.js"; import routes4 from "./routes4.js"; import routes5 from "./routes5.js"; import { makeBadges } from "./badges.js"; import fs from "fs"; import path from "path"; import { fileURLToPath } from "url";
 const dir = path.dirname(fileURLToPath(import.meta.url));
@@ -60,6 +60,7 @@ await step("schema_v31.sql", SCHEMA["schema_v31.sql"]);
 await step("schema_v32.sql", SCHEMA["schema_v32.sql"]);
 await step("schema_v33.sql", SCHEMA["schema_v33.sql"]);
 await step("schema_v34.sql", SCHEMA["schema_v34.sql"]);
+await step("schema_v35.sql", SCHEMA["schema_v35.sql"]);
 };
 try { await runSchema(); if (await grantOwner(process.env["OWNER_EMAIL"])) console.log("[owner] роль owner выдана:", process.env["OWNER_EMAIL"]); globalThis.__boot = "запуск сервера"; }
 catch (e) {
@@ -85,7 +86,7 @@ app.use("/api", (req, res, next) => {
     liveT.set(sc, setTimeout(() => { liveT.delete(sc); live("refresh", { s: sc }); }, 400));
   }); next();
 });
-const APP_VERSION = "v70";
+const APP_VERSION = "v71";
 app.get("/api/version", (_q, r) => { const h = f => { try { return crypto.createHash("sha1").update(fs.readFileSync(new URL(f, import.meta.url))).digest("hex").slice(0, 8); } catch { return null; } }; r.json({ version: APP_VERSION, files: { routes2: h("./routes2.js"), routes10: h("./routes10.js"), app: h("./app.js") } }); });
 const dbFp = async () => { const [d] = await q("select md5(current_database()||pg_postmaster_start_time()::text) f, now() n"); return { db: d.f.slice(0, 6), db_time: d.n }; };
 app.get("/api/diag", async (_q, r) => { try { r.json({ version: APP_VERSION, host: _q.headers["x-forwarded-host"] || _q.headers.host, server_time: new Date().toISOString(), ...(await dbFp()) }); } catch (e) { r.status(500).json({ error: "db" }); } });
@@ -135,6 +136,7 @@ app.post("/api/auth/register", lim, antibot({ strictMail: true }), wrap(async (r
   if (!/^[\w.-]{3,24}$/.test(username || "")) throw E(400, "bad username");
   if ((password || "").length < 8) throw E(400, "weak password");
   hooks.weakPw?.(password, username, email);
+  hooks.panicGate?.("register"); hooks.emuCheck?.(req, "register", null);
   await hooks.deviceGate?.(req);
   try { const [u] = await q(`insert into users(email,username,password_hash) values($1,$2,$3) returning ${U}`, [email.toLowerCase(), username, await bcrypt.hash(password, 10)]); if (await grantOwner(email)) u.role = "owner"; try { await hooks.syncAdminTg?.(); const [rr] = await q("select role from users where id=$1", [u.id]); if (rr) u.role = rr.role; } catch { } await hooks.deviceBind?.(req, u.id); setCookie(res, u.id); res.json(u); }
   catch (e) { if (e.code === "23505") throw E(409, "email or username taken"); throw e; }
@@ -161,6 +163,7 @@ app.post("/api/auth/login", lim, wrap(async (req, res) => {
   const { email, password, code } = req.body || {};
   const [u] = await q("select * from users where email=$1", [String(email || "").toLowerCase()]);
   if (!u || !(await bcrypt.compare(String(password || ""), u.password_hash))) throw E(401, "wrong email or password");
+  hooks.emuCheck?.(req, "login", u.role);
   if (u.totp_enabled) {
     if (!code) return res.json({ need_2fa: true });
     if (!(await twofaCheck(u.id, code))) throw E(401, "wrong 2fa code");
@@ -177,7 +180,9 @@ app.post("/api/auth/google", lim, wrap(async (req, res) => {
   const email = String(t.email).toLowerCase();
   let [u] = await q("select * from users where email=$1", [email]);
   if (u?.totp_enabled) throw E(403, "У этого аккаунта включена двухфакторная защита. Войдите по email и паролю");
+  if (u) hooks.emuCheck?.(req, "login", u.role);
   if (!u) {
+    hooks.panicGate?.("register"); hooks.emuCheck?.(req, "register", null);
     await hooks.deviceGate?.(req);
     const base = (email.split("@")[0].replace(/[^\w.-]/g, "").slice(0, 18) || "user").padEnd(3, "0");
     for (let i = 0; i < 8 && !u; i++) {
@@ -216,6 +221,7 @@ routes12(app, { q, E, wrap, need, hooks, online });
 routes13(app, { q, tx, E, wrap, need, hooks, pushUser });
 routes14(app, { q, E, wrap, need, hooks, pushUser });
 routes15(app, { q, E, wrap, need, hooks, pushUser });
+await routes16(app, { q, E, wrap, need, hooks, notifyStaff: t => r2.notifyStaff?.(t) });
 routes8(app, { q, pool, tx, E, wrap, need, hooks, pushUser, online: uid => online(uid), notifyStaff: t => r2.notifyStaff?.(t) });
 app.get("/api/listings", wrap(async (req, res) => {
   const { game, category, min, max, q: s, seller, sort, offset } = req.query, w = ["l.status='active'"], p = [];

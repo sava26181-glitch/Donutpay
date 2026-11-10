@@ -110,6 +110,7 @@ export default function routes5(app, { q, pool, tx, E, wrap, need, hooks, pushUs
     await tx(c => move(c, req.user.id, "test_topup", a, "test", null, null)); res.status(201).json({ ok: true });
   }));
   app.post("/api/finance/withdraw", need, wrap(async (req, res) => {
+    hooks.panicGate?.("withdraw"); if (hooks.emuCheck) { const [ur] = await q("select role from users where id=$1", [req.user.id]); hooks.emuCheck(req, "withdraw", ur?.role); }
     const a = money(req.body?.amount), method = String(req.body?.method || ""), det = String(req.body?.details || "").replace(/[\u0000-\u001f<>]/g, "").trim();
     if (!(a >= 10 && a <= 500000)) throw E(400, "amount 10-500000"); if (!["card", "sbp", "crypto", "other"].includes(method)) throw E(400, "bad method"); if (det.length < 3 || det.length > 200) throw E(400, "details 3-200 chars");
     const holder = String(req.body?.holder || "").replace(/[\u0000-\u001f<>]/g, "").replace(/\s+/g, " ").trim().slice(0, 80);
