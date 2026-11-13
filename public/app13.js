@@ -15,7 +15,7 @@
   window.kycBox = (id) => `<div class="kyc-box" id="kb-${id}">${HOW}<input type="file" id="kf-${id}" accept="video/*" capture="user" hidden onchange="kycSend('${id}',this.files[0])"><button class="btn pri big" style="width:100%" onclick="document.getElementById('kf-${id}').click()">Снять или выбрать видео</button><small class="m" style="display:block;margin-top:8px">Видео видит только администратор. Оно нужно один раз, чтобы сверить лицо с фото в паспорте.</small></div>`;
   window.kycSend = (id, f) => {
     if (!f) return; const box = document.getElementById("kb-" + id); if (!box) return;
-    if (f.size > 38e6) { toast("Видео слишком большое: до 38 МБ. Снимите короче"); return }
+    if (f.size > 100e6) { toast("Видео слишком большое: до 100 МБ. Снимите короче"); return }
     box.innerHTML = `<div class="achip"><span class="cb"><b>Загрузка видео</b><small class="m" id="kpc">0%</small></span></div>`;
     const x = new XMLHttpRequest(); x.open("POST", `/api/kyc/${id}/video`); x.setRequestHeader("Content-Type", "application/octet-stream");
     x.upload.onprogress = e => { if (e.lengthComputable) { const el = document.getElementById("kpc"); if (el) el.textContent = Math.round(e.loaded / e.total * 100) + "%" } };
