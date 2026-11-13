@@ -13,7 +13,7 @@
   window.safetyLoad = load;
   const pl = (n, a) => typeof plr2 === "function" ? plr2(n, a) : a[2];
   const hh = () => SF.hold_hours + " " + pl(SF.hold_hours, ["час", "часа", "часов"]);
-  const rubS = n => Number(n).toLocaleString("ru-RU") + " ₽";
+  const rubS = n => $m(n);
   const dt = d => new Date(d).toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" });
 
   const I = {

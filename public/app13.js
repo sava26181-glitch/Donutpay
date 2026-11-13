@@ -1,7 +1,7 @@
 // v68: безопасность сделок: видео-верификация (лицо и паспорт), страница «Проверка личности», проверка видео в админке
 (() => {
   const E = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-  const rub = n => Number(n).toLocaleString("ru-RU", { maximumFractionDigits: 2 }) + " ₽";
+  const rub = n => $m(n);
   const dt = d => new Date(d).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
 
   // тексты уведомлений

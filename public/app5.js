@@ -103,7 +103,7 @@ const otSend = act(async () => {
 
 
 // ---- дуэли магазинов (24 часа)
-const dRub = c => (c / 100).toLocaleString("ru-RU") + " ₽";
+const dRub = c => $m(c / 100);
 const dLeft = e => { const ms = new Date(e) - Date.now(); if (ms <= 0) return "завершается"; const h = Math.floor(ms / 36e5), m = Math.floor(ms % 36e5 / 6e4); return (h ? h + " ч " : "") + m + " мин" };
 function tug(a, b, na, nb) {
   const t = a + b, pa = t ? Math.round(a / t * 100) : 50;
@@ -162,7 +162,7 @@ const duelAutoOff = act(async (g, c) => { await api("/duels/auto", { method: "PO
 // ---- тестовые комиссии: расчёт в форме лота, вывод, заявки
 let FEES = null;
 const feesGet = async () => FEES || (FEES = await api("/fees").catch(() => ({ sale_pct: 7.5, my_sale_pct: 7.5, withdraw_pct: 3 })));
-const mny = n => (Math.round(n * 100) / 100).toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " ₽";
+const mny = n => $m(n);
 async function feeBox() {
   const p = document.getElementById("sp"); if (!p) return; const f = await feesGet();
   let b = document.getElementById("sfee"); if (!b) { b = document.createElement("div"); b.id = "sfee"; b.className = "card sfee"; const ss0 = document.getElementById("ss"); (((ss0 || p).closest(".grid")) || (ss0 || p).closest(".sf") || (ss0 || p).parentElement).after(b) }
@@ -191,7 +191,7 @@ wdAdmin = async function () {
 // ---- промокоды (владелец)
 async function promosAdmin() {
   const ps = await api("/admin/promos");
-  const val = p => p.kind === "percent" ? `${p.value}%` : `${(p.value).toLocaleString("ru-RU")} ₽`;
+  const val = p => p.kind === "percent" ? `${p.value}%` : `${$m(p.value)}`;
   const cond = p => [p.max_discount_cents != null ? `скидка не больше ${dRub(p.max_discount_cents)}` : "", p.min_order_cents > 0 ? `заказ от ${dRub(p.min_order_cents)}` : "", p.max_order_cents != null ? `заказ до ${dRub(p.max_order_cents)}` : "", p.max_uses != null ? `использований ${p.uses} из ${p.max_uses}` : `использован ${p.uses} раз`, `на человека ${p.per_user}`, p.expires_at ? `до ${new Date(p.expires_at).toLocaleDateString("ru-RU")}` : "без срока"].filter(Boolean).join(" · ");
   return `<div class="card"><b>Новый промокод</b><p class="m" style="margin:4px 0 8px">Скидку оплачивает площадка: продавец получает всю сумму минус комиссию. Покупатель вводит код при оплате заказа.</p><button class="btn pri" style="width:100%" onclick="promoForm()">Создать промокод</button></div>${ps.map(p => `<div class="card"><div class="row bet"><b class="pmcode">${esc(p.code)}</b><span class="tag">${p.active ? "Включён" : "Выключен"}</span></div><div style="font-size:18px;font-weight:700;margin:4px 0">−${val(p)}</div><div class="m">${cond(p)}</div><div class="row" style="margin-top:8px"><button class="btn sm" onclick="promoToggle('${p.id}',${!p.active})">${p.active ? "Выключить" : "Включить"}</button><button class="btn sm dng" onclick="promoDel('${p.id}')">Удалить</button></div></div>`).join("") || empty("Промокодов пока нет.")}`;
 }

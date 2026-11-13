@@ -35,21 +35,21 @@ ${holds}${note}
     const a0 = Math.floor(cap) >= 10 ? Math.floor(cap) : 10;
     window._wdp = pct; window._wdm = "card"; window._wdb = cap;
     const M = [["card", "Карта"], ["sbp", "СБП"], ["crypto", "Крипта"], ["other", "Другое"]];
-    mdl(`<div class="xw"><div class="xw-h"><h3>Вывод</h3><small>Доступно ${fm(bal)}</small></div>
+    mdl(`<div class="xw"><div class="xw-h"><h3>Вывод</h3><small>Доступно ${$m(bal, "RUB")}${CUR.c !== "RUB" ? " · " + fm(bal) : ""}</small></div>
 <div class="xw-amt"><input id="wda" type="number" inputmode="decimal" min="10" value="${a0}" oninput="xwCalc()" aria-label="Сумма вывода"><span>₽</span></div>
 <div class="xw-q">${[["25%", .25], ["50%", .5], ["Всё", 1]].map(x => `<button type="button" onclick="xwQ(${x[1]})">${x[0]}</button>`).join("")}</div>
 <label>Куда</label><div class="wdm">${M.map((x, i) => `<button type="button" class="${i ? "" : "on"}" data-m="${x[0]}" onclick="wdM('${x[0]}')">${x[1]}</button>`).join("")}</div>
 <input id="wdd" maxlength="200" placeholder="Номер карты, телефон или кошелёк" autocomplete="off">
 <div id="wdhb"><input id="wdh" maxlength="80" autocomplete="name" placeholder="Имя и фамилия получателя, как в банке"></div>
 <div class="xw-sum" id="xwc"></div>
-${fin.wd_limit ? `<p class="xw-lim">Без проверки личности в этом месяце можно вывести ещё ${fm(fin.wd_left || 0)}. <a onclick="$('#md').remove();go('/identity')">Снять лимит</a></p>` : ""}
+${fin.wd_limit ? `<p class="xw-lim">Без проверки личности в этом месяце можно вывести ещё ${$m(fin.wd_left || 0, "RUB")}. <a onclick="$('#md').remove();go('/identity')">Снять лимит</a></p>` : ""}
 <button class="btn pri big" onclick="withdrawDo()">Отправить заявку</button>
 ${fin.test_mode ? `<p class="xw-note">Тестовый режим: деньги не переводятся.</p>` : ""}</div>`);
     xwCalc();
   };
   window.xwCalc = () => {
     const a = +document.getElementById("wda")?.value || 0, fee = Math.round(a * (window._wdp || 0)) / 100, e = document.getElementById("xwc");
-    if (e) e.innerHTML = `<span>Вы получите<small>комиссия ${window._wdp || 0}%, ${fm(fee)}</small></span><b>${fm(Math.max(0, a - fee))}</b>`;
+    const net = Math.max(0, a - fee); if (e) e.innerHTML = `<span>Вы получите<small>комиссия ${window._wdp || 0}%, ${$m(fee, "RUB")}</small></span><span class="xw-r"><b>${$m(net, "RUB")}</b>${CUR.c !== "RUB" ? `<small>≈ ${fm(net)}</small>` : ""}</span>`;
   };
   window.xwQ = k => { const e = document.getElementById("wda"); if (!e) return; e.value = Math.max(10, Math.floor((window._wdb || 0) * k)); xwCalc() };
 

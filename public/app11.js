@@ -79,7 +79,7 @@
     }
     const m = document.createElement("div"); m.id = "um"; m.className = "um2";
     m.innerHTML = groups.map(g => `<div class="umg">${g.map(item).join("")}</div>`).join("") + (window.uiLangRow ? window.uiLangRow() : ""); document.body.append(m);
-    if (u) api("/me/balance").then(r => { const e = $("#umbal"); if (e) e.textContent = Number(r.balance).toLocaleString("ru-RU", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + " ₽" }).catch(() => { });
+    if (u) api("/me/balance").then(r => { const e = $("#umbal"); if (e) e.textContent = $m(r.balance) }).catch(() => { });
   };
 
   // v52: метка страницы на body, чтобы настраивать вид для ПК

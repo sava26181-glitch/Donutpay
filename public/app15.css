@@ -194,3 +194,10 @@ p.sf-legal{margin:14px 2px 12px;padding:0;border:0;color:var(--m);font-size:12.5
 .xpn.on{border-color:#e5484d;box-shadow:0 0 0 1px #e5484d inset}
 .xpn.on .xpn-t span{color:#e5484d}
 .xpn-e{margin:10px 0 0!important}
+
+/* v72: валюта */
+.xw-r{text-align:right}
+.xf-cur{margin:0 0 10px;display:inline-flex}
+.xf-cur button{min-width:48px}
+.xf-cur button[disabled]{opacity:.4;cursor:not-allowed}
+.xf-rate{margin:4px 0 12px;color:var(--m);font-size:12.5px;line-height:1.45}
