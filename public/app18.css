@@ -206,3 +206,41 @@
 .xld-t{display:grid;gap:4px;margin-top:8px;font-size:13px}
 .xld-t div{display:grid;grid-template-columns:1fr auto 52px;gap:10px;color:var(--m)}
 .xld-t span:nth-child(2){color:var(--t);text-align:right}.xld-t span:last-child{text-align:right}
+
+/* логотип подстраивается под цвет акцента сайта */
+.lga{--lg1:color-mix(in srgb,var(--p) 10%,#fff);--lg2:color-mix(in srgb,var(--p) 72%,#fff)}
+.lga .a1 .ab{stroke:var(--lg1)}.lga .a1 .ah{fill:var(--lg1);stroke:var(--lg1)}
+.lga .a2 .ab{stroke:var(--lg2)}.lga .a2 .ah{fill:var(--lg2);stroke:var(--lg2)}
+.lga .sv{stroke:var(--p)}.lga .sw{stroke:var(--lg1)}
+
+/* iPhone: плавающая панель Safari. Нижнее меню продлено вниз, чтобы под ним не просвечивал текст страницы */
+@media(max-width:780px){
+  .bn::after{content:"";position:absolute;left:0;right:0;top:100%;height:160px;background:inherit;pointer-events:none}
+  @supports(-webkit-touch-callout:none){#ft{padding-bottom:96px}}
+}
+
+/* нагрузочный тест: отступ сверху */
+.xld{margin-top:14px}
+
+/* страница контактов */
+.card.legal:has(.lgc){padding:0;border:0;background:none;box-shadow:none}
+h2:has(+ .card.legal .lgc){margin:22px 0 4px;color:#fff;font-size:30px;letter-spacing:-.02em}
+.lgc{display:grid;gap:14px}
+.lgc-sub{margin:0 0 4px;color:var(--m);font-size:13px;font-style:italic}
+.lgc-card{display:grid;gap:12px;padding:18px;margin:0}
+.lgc-card h3{margin:0;font-size:17px}
+.lgc-card p{margin:0;color:var(--m);font-size:14px;line-height:1.5}
+.lgc-btn{display:grid;place-items:center;width:100%;min-height:50px;margin:0;box-sizing:border-box}
+.lgc-row{display:flex;align-items:center;gap:14px;padding:12px 0;border-top:1px solid var(--line2);color:var(--t);text-decoration:none}
+.lgc-row i{display:grid;place-items:center;flex:none;width:42px;height:42px;border-radius:50%;background:color-mix(in srgb,var(--p) 16%,transparent);color:var(--pl)}
+.lgc-row svg{width:20px;height:20px}
+.lgc-row span{display:grid;gap:2px;min-width:0}
+.lgc-row small{color:var(--m);font-size:12px}
+.lgc-row b{font-size:15px;overflow-wrap:anywhere}
+.lgc-row em{color:var(--m);font-size:12.5px;font-style:normal;line-height:1.4}
+.lgc-legal{margin-top:10px;padding:0 4px;color:var(--m);font-size:13px}
+.lgc-legal h3{margin:0 0 6px;color:var(--m);font-size:13px}
+.lgc-legal p{margin:3px 0}
+.lgc-legal b{color:var(--t)}
+.lgc-legal .lk{color:var(--pl)}
+.card.legal ul{margin:6px 0 10px;padding-left:20px}.card.legal li{margin:4px 0}

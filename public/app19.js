@@ -1,7 +1,7 @@
 // v78: нагрузочный тест в админке (только владельцы)
 (function () {
   const E2 = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-  const N = x => Number(x || 0).toLocaleString("ru-RU");
+  const N = x => Math.round(Number(x || 0)).toLocaleString("ru-RU"), R1 = x => Number(x || 0).toLocaleString("ru-RU", { maximumFractionDigits: 1 });
   const V = { good: ["Выдержал", "ok"], ok: ["Справился, но тяжело", "mid"], bad: ["Не выдержал", "no"] };
   let timer = 0, armed = 0;
   const res = L => {
@@ -9,7 +9,7 @@
     if (L.failed) return `<div class="xld-res"><b class="xld-v no">Тест не удался</b><p class="m">${E2(L.failed)}</p></div>`;
     const v = V[L.verdict] || V.bad;
     return `<div class="xld-res"><b class="xld-v ${v[1]}">${v[0]}</b>${L.stopped ? `<p class="m">Остановлен: ${E2(L.stopped)}</p>` : ""}
-<div class="xld-g"><div><small>Пользователей</small><b>${N(L.users)}</b></div><div><small>Запросов в секунду</small><b>${N(L.rps)}</b></div><div><small>Ответ у 95%</small><b>${N(L.p95)} мс</b></div><div><small>Ошибок</small><b>${L.err_pct}%</b></div></div>
+<div class="xld-g"><div><small>Пользователей</small><b>${N(L.users)}</b></div><div><small>Запросов в секунду</small><b>${R1(L.rps)}</b></div><div><small>Ответ у 95%</small><b>${N(L.p95)} мс</b></div><div><small>Ошибок</small><b>${L.err_pct}%</b></div></div>
 <p class="m xld-s">Медиана ${N(L.p50)} мс, худший ${N(L.max)} мс. Всего ${N(L.requests)} запросов за ${L.seconds} с. Память ${L.rss_mb} МБ, пауза сервера до ${L.lag_max} мс.</p>
 <details><summary>По страницам</summary><div class="xld-t">${(L.endpoints || []).map(e => `<div><span>${E2(e.path)}</span><span>${N(e.p95)} мс</span><span>${e.err ? e.err + " ош." : "ок"}</span></div>`).join("")}</div></details>
 ${L.cleanup && L.cleanup.left ? `<p class="m" style="color:#e5484d">Тестовые пользователи удалились не полностью: осталось ${L.cleanup.left}</p>` : `<p class="m">Тестовые пользователи удалены.</p>`}</div>`;
