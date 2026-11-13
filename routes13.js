@@ -60,26 +60,53 @@ export default function routes13(app, { q, tx, E, wrap, need, hooks, pushUser })
     const [k] = await q("insert into kyc_requests(user_id,kind,reason) values($1,'identity','Верификация по желанию: вывод без холда') returning id", [req.user.id]);
     res.status(201).json({ id: k.id });
   }));
-  app.post("/api/kyc/:id/video", need, express.raw({ type: "application/octet-stream", limit: "40mb" }), wrap(async (req, res) => {
+  app.post("/api/kyc/:id/video", need, express.raw({ type: "application/octet-stream", limit: "102mb" }), wrap(async (req, res) => {
     if (!uuid(req.params.id)) throw E(404, "not found");
-    if (!stor.on) return res.status(503).json({ error: "Хранилище для видео не подключено на сервере (нужен SB_KEY)", missing: ["SB_KEY"] });
     const [k] = await q("select * from kyc_requests where id=$1 and user_id=$2", [req.params.id, req.user.id]); if (!k) throw E(404, "not found");
     if (!["need", "submitted"].includes(k.status)) throw E(409, "Эта проверка уже завершена");
     const b = req.body; if (!Buffer.isBuffer(b)) throw E(400, "bad upload"); const m = sniff(b); if (!m) throw E(400, "Допустимы видео MP4, MOV, WebM");
-    if (b.length > 38e6) throw E(400, "Видео слишком большое (до 38 МБ)");
+    if (b.length > 100e6) throw E(400, "Видео слишком большое (до 100 МБ). Снимите короче или в меньшем качестве");
     if (m !== "video/webm") { const d = mp4dur(b); if (d == null) throw E(400, "Не удалось определить длительность видео"); if (d < 5 || d > 90) throw E(400, `Длительность видео должна быть 5–90 секунд (сейчас ${Math.round(d)} с)`); }
-    const path = `kyc/${req.user.id}/${crypto.randomUUID()}.${m === "video/webm" ? "webm" : m === "video/quicktime" ? "mov" : "mp4"}`;
-    try { await stor.put(stor.PRIV, path, b, m); } catch (e) { console.error("[storage]", e.message); throw E(502, "Хранилище недоступно: " + e.message); }
-    if (k.path) { try { await stor.del?.(k.bucket, k.path) } catch { } }
-    await q("update kyc_requests set status='submitted',bucket=$2,path=$3,mime=$4,size=$5,submitted_at=now() where id=$1", [k.id, stor.PRIV, path, m, b.length]);
+    // есть облачное хранилище (SB_KEY): кладём туда. Нет: сохраняем видео в базе, чтобы отправка работала без дополнительных настроек
+    let bucket = "db", path = "db";
+    if (stor.on) {
+      path = `kyc/${req.user.id}/${crypto.randomUUID()}.${m === "video/webm" ? "webm" : m === "video/quicktime" ? "mov" : "mp4"}`; bucket = stor.PRIV;
+      try { await stor.put(stor.PRIV, path, b, m); } catch (e) { console.error("[storage]", e.message); throw E(502, "Хранилище недоступно: " + e.message); }
+    } else {
+      await q("insert into kyc_videos(request_id,data,mime,size) values($1,$2,$3,$4) on conflict(request_id) do update set data=excluded.data,mime=excluded.mime,size=excluded.size,created_at=now()", [k.id, b, m, b.length]);
+    }
+    if (k.path && k.bucket !== "db") { try { await stor.del?.(k.bucket, k.path) } catch { } }
+    if (bucket !== "db") await q("delete from kyc_videos where request_id=$1", [k.id]);
+    await q("update kyc_requests set status='submitted',bucket=$2,path=$3,mime=$4,size=$5,submitted_at=now() where id=$1", [k.id, bucket, path, m, b.length]);
     res.status(201).json({ ok: true });
   }));
   app.get("/api/kyc/:id/url", need, wrap(async (req, res) => {
     if (!uuid(req.params.id)) throw E(404, "not found");
     const [u] = await q("select role from users where id=$1", [req.user.id]), [k] = await q("select * from kyc_requests where id=$1", [req.params.id]);
     if (!k || !k.path || !(k.user_id === req.user.id || ADM.includes(u?.role))) throw E(404, "not found");
+    if (k.bucket === "db") return res.json({ url: `/api/kyc/${k.id}/file`, mime: k.mime });
     res.json({ url: await stor.signed(k.bucket, k.path, 60), mime: k.mime });
   }));
+  // видео из базы: только владелец заявки и администраторы; поддерживает Range, без него видео не играет в Safari на iPhone
+  app.get("/api/kyc/:id/file", need, wrap(async (req, res) => {
+    if (!uuid(req.params.id)) throw E(404, "not found");
+    const [u] = await q("select role from users where id=$1", [req.user.id]), [k] = await q("select user_id from kyc_requests where id=$1", [req.params.id]);
+    if (!k || !(k.user_id === req.user.id || ADM.includes(u?.role))) throw E(404, "not found");
+    const [v] = await q("select data,mime,size from kyc_videos where request_id=$1", [req.params.id]); if (!v) throw E(404, "not found");
+    // драйвер базы обычно отдаёт Buffer; если пришла hex-строка (\\x…), переводим сами
+    const data = Buffer.isBuffer(v.data) ? v.data : Buffer.from(String(v.data).replace(/^\\x/, ""), "hex");
+    const size = data.length, hd = { "Content-Type": v.mime, "Accept-Ranges": "bytes", "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff", "Content-Disposition": "inline" };
+    const m = /^bytes=(\d*)-(\d*)$/.exec(String(req.headers.range || ""));
+    if (m && (m[1] || m[2])) {
+      let a = m[1] === "" ? Math.max(0, size - +m[2]) : +m[1], z = m[1] === "" || m[2] === "" ? size - 1 : Math.min(+m[2], size - 1);
+      if (a > z || a >= size) return res.status(416).set("Content-Range", `bytes */${size}`).end();
+      return res.status(206).set({ ...hd, "Content-Range": `bytes ${a}-${z}/${size}`, "Content-Length": z - a + 1 }).end(data.subarray(a, z + 1));
+    }
+    res.status(200).set({ ...hd, "Content-Length": size }).end(data);
+  }));
+  // видео паспорта не хранится вечно: через KYC_KEEP_DAYS дней после решения удаляем (по умолчанию 30)
+  const keep = num(env["KYC_KEEP_DAYS"], 30);
+  setInterval(async () => { try { await q("delete from kyc_videos v using kyc_requests k where k.id=v.request_id and k.status in ('approved','rejected') and k.resolved_at < now() - ($1||' days')::interval", [String(keep)]); } catch (e) { console.warn("[kyc cleanup]", e.message); } }, 6 * 3600e3).unref?.();
 
   // ---- админ: проверка видео
   app.get("/api/admin/kyc", need, adm, wrap(async (_req, res) => res.json(await q(
