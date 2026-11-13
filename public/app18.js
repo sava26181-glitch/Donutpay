@@ -59,11 +59,12 @@ ${lim}${holds}</aside>
     let pct = 3; try { pct = (await feesGet()).withdraw_pct } catch { }
     const a0 = Math.floor(cap) >= 10 ? Math.floor(cap) : 10;
     window._wdp = pct; window._wdm = "card"; window._wdb = cap;
+    const IC = { card: '<rect x="3" y="6" width="18" height="12" rx="3"/><path d="M3 10.5h18M7 15h3"/>', sbp: '<path d="M13 3L5 13.5h6L10 21l8-10.5h-6z"/>', crypto: '<circle cx="12" cy="12" r="8.5"/><path d="M9.5 8.5h3.8a1.8 1.8 0 010 3.6H9.5m0 0h4.2a1.9 1.9 0 010 3.8H9.5M9.5 7v10M11.5 6v2M11.5 16v2"/>', other: '<circle cx="6" cy="12" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="18" cy="12" r="1.4"/>' };
     const M = [["card", "Карта"], ["sbp", "СБП"], ["crypto", "Крипта"], ["other", "Другое"]];
-    mdl(`<div class="wx"><div class="wx-h"><h3>Вывод</h3><small>Доступно ${$m(bal, "RUB")}${CUR.c !== "RUB" ? " · " + fm(bal) : ""}</small></div>
-<div class="wx-amt"><input id="wda" type="number" inputmode="decimal" min="10" value="${a0}" oninput="xwCalc()" aria-label="Сумма вывода"><span>₽</span></div>
-<div class="wx-q">${[["25%", .25], ["50%", .5], ["Всё", 1]].map(x => `<button type="button" onclick="xwQ(${x[1]})">${x[0]}</button>`).join("")}</div>
-<div class="wdm wx-m">${M.map((x, i) => `<button type="button" class="${i ? "" : "on"}" data-m="${x[0]}" onclick="wdM('${x[0]}')">${x[1]}</button>`).join("")}</div>
+    mdl(`<div class="wx"><div class="wx-h"><h3>Вывод</h3><small>Доступно <b>${$m(bal, "RUB")}</b>${CUR.c !== "RUB" ? " · " + fm(bal) : ""}</small></div>
+<div class="wx-hero"><label for="wda">Сумма</label><div class="wx-amt"><input id="wda" type="number" inputmode="decimal" min="10" value="${a0}" oninput="xwCalc()" aria-label="Сумма вывода"><span>₽</span></div>
+<div class="wx-q">${[["25%", .25], ["50%", .5], ["Всё", 1]].map(x => `<button type="button" onclick="xwQ(${x[1]})">${x[0]}</button>`).join("")}</div></div>
+<div class="wdm wx-m">${M.map((x, i) => `<button type="button" class="${i ? "" : "on"}" data-m="${x[0]}" onclick="wdM('${x[0]}')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${IC[x[0]]}</svg><span>${x[1]}</span></button>`).join("")}</div>
 <input id="wdd" maxlength="200" placeholder="Номер карты, телефон или кошелёк" autocomplete="off">
 <div id="wdhb"><input id="wdh" maxlength="80" autocomplete="name" placeholder="Имя получателя, как в банке"></div>
 <div class="wx-sum" id="xwc"></div>
@@ -74,7 +75,7 @@ ${fin.test_mode ? `<p class="wx-note">Тест: деньги не перевод
   };
   window.xwCalc = () => {
     const a = +document.getElementById("wda")?.value || 0, fee = Math.round(a * (window._wdp || 0)) / 100, e = document.getElementById("xwc"), net = Math.max(0, a - fee);
-    if (e) e.innerHTML = `<span>Получите<small>комиссия ${window._wdp || 0}% · ${$m(fee, "RUB")}</small></span><span class="wx-r"><b>${$m(net, "RUB")}</b>${CUR.c !== "RUB" ? `<small>≈ ${fm(net)}</small>` : ""}</span>`;
+    if (e) e.innerHTML = `<div class="wx-line"><span>Сумма</span><span>${$m(a, "RUB")}</span></div><div class="wx-line"><span>Комиссия ${window._wdp || 0}%</span><span>−${$m(fee, "RUB")}</span></div><div class="wx-line tot"><span>Получите</span><span class="wx-r"><b>${$m(net, "RUB")}</b>${CUR.c !== "RUB" ? `<small>≈ ${fm(net)}</small>` : ""}</span></div>`;
   };
   window.xwQ = k => { const e = document.getElementById("wda"); if (!e) return; e.value = Math.max(10, Math.floor((window._wdb || 0) * k)); xwCalc() };
 
