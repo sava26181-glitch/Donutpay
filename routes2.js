@@ -1,4 +1,5 @@
 import express from "express"; import crypto from "crypto"; import rateLimit from "express-rate-limit"; import { makeStorage } from "./storage.js"; import wf from "./wordfilter.js";
+const rawOct = limit => { const r = express.raw({ type: "application/octet-stream", limit }); return (req, res, next) => /^application\/octet-stream/i.test(String(req.headers["content-type"] || "")) ? r(req, res, next) : next(); }; // без нужного Content-Type не трогаем тело: иначе запрос мог зависнуть
 export default function routes2(app, { q, pool, tx, E, wrap, need, online, B, hooks }) {
   const stor = makeStorage(process.env, process.env["DATABASE_URL"]);
   stor.ensure().then(r => console.log("[storage]", r)).catch(e => console.error("[storage] ensure failed:", e.message));
@@ -15,7 +16,7 @@ export default function routes2(app, { q, pool, tx, E, wrap, need, online, B, ho
   // ---- media (хранится в БД; проверка сигнатуры файла, а не заголовка клиента)
   const mime = b => b.length < 12 ? null : b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47 ? "image/png" : b[0] === 0xff && b[1] === 0xd8 ? "image/jpeg" : b.slice(0, 3).toString() === "GIF" ? "image/gif" : b.slice(0, 4).toString() === "RIFF" && b.slice(8, 12).toString() === "WEBP" ? "image/webp" : null;
   const LIM = { avatar: 2e6, cover: 5e6, listing: 5e6, news: 5e6, tour: 5e6 };
-  app.post("/api/media", need, express.raw({ type: "application/octet-stream", limit: "6mb" }), wrap(async (req, res) => {
+  app.post("/api/media", need, rawOct("6mb"), wrap(async (req, res) => {
     const kind = req.query.kind, b = req.body; if (!LIM[kind] || !Buffer.isBuffer(b)) throw E(400, "bad upload");
     const m = mime(b); if (!m) throw E(400, "only png, jpeg, webp, gif"); if (b.length > LIM[kind]) throw E(400, "file too large"); if (m === "image/gif" && kind !== "cover" && kind !== "news" && kind !== "tour") throw E(400, "gif only for cover");
     if (kind === "tour") { const [u] = await q("select role from users where id=$1", [req.user.id]); if (!["organizer", "moderator", "admin", "owner"].includes(u?.role)) { const [h] = await q("select 1 from tournament_helpers where user_id=$1 limit 1", [req.user.id]); if (!h) throw E(403, "forbidden"); } }
@@ -371,7 +372,7 @@ export default function routes2(app, { q, pool, tx, E, wrap, need, online, B, ho
 
   // ---- вложения (приватный бакет Supabase Storage, доступ только по короткоживущим ссылкам)
   const amime = b => mime(b) || (b.slice(0, 5).toString() === "%PDF-" ? "application/pdf" : null);
-  app.post("/api/attachments", need, express.raw({ type: "application/octet-stream", limit: "6mb" }), wrap(async (req, res) => {
+  app.post("/api/attachments", need, rawOct("6mb"), wrap(async (req, res) => {
     const ctx = req.query.context, ref = String(req.query.ref || ""), b = req.body; if (!["chat", "ticket", "dispute"].includes(ctx) || !Buffer.isBuffer(b)) throw E(400, "bad upload");
     const m = amime(b); if (!m) throw E(400, "allowed: png, jpeg, webp, gif, pdf"); if (b.length > 5e6) throw E(400, "file too large (max 5 MB)");
     if (ctx === "chat") { const [c] = await q("select id from conversations where id=$1 and $2 in (buyer_id,seller_id)", [ref, req.user.id]); if (!c) throw E(404, "not found"); }

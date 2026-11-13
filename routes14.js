@@ -88,8 +88,8 @@ export default function routes14(app, { q, E, wrap, need, hooks, pushUser }) {
     return { norm, flags };
   };
   hooks.withdrawInfo = async uid => {
-    const k = CFG(), [u] = await q("select id_verified_at from users where id=$1", [uid]);
-    const [m] = await q("select coalesce(sum(amount),0)::float s from withdrawals where user_id=$1 and status in ('pending','processing','paid') and created_at >= (date_trunc('month', now() at time zone 'Europe/Moscow') at time zone 'Europe/Moscow')", [uid]);
+    const k = CFG();
+    const [[u], [m]] = await Promise.all([q("select id_verified_at from users where id=$1", [uid]), q("select coalesce(sum(amount),0)::float s from withdrawals where user_id=$1 and status in ('pending','processing','paid') and created_at >= (date_trunc('month', now() at time zone 'Europe/Moscow') at time zone 'Europe/Moscow')", [uid])]);
     const paused = !!hooks.panicActive?.();
     return u?.id_verified_at ? { wd_limit: null, wd_used: m.s, wd_left: null, wd_paused: paused } : { wd_limit: k.wdLimit, wd_used: m.s, wd_left: Math.max(0, k.wdLimit - m.s), wd_paused: paused };
   };

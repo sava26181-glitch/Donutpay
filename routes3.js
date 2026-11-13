@@ -1,4 +1,5 @@
 import express from "express"; import crypto from "crypto"; import rateLimit from "express-rate-limit"; import { makeStorage } from "./storage.js";
+const rawOct = limit => { const r = express.raw({ type: "application/octet-stream", limit }); return (req, res, next) => /^application\/octet-stream/i.test(String(req.headers["content-type"] || "")) ? r(req, res, next) : next(); }; // без нужного Content-Type не трогаем тело: иначе запрос мог зависнуть
 export default function routes3(app, { q, pool, tx, E, wrap, need, pushUser, hooks }) {
   const env = process.env, stor = makeStorage(env, env.DATABASE_URL), ST = ["moderator", "admin", "owner"];
 
@@ -57,7 +58,7 @@ export default function routes3(app, { q, pool, tx, E, wrap, need, pushUser, hoo
   // ---------- видео-подтверждение выдачи ----------
   const sniff = b => { if (b.length < 16) return null; if (b.slice(4, 8).toString() === "ftyp") return b.slice(8, 12).toString() === "qt  " ? "video/quicktime" : "video/mp4"; if (b[0] === 0x1a && b[1] === 0x45 && b[2] === 0xdf && b[3] === 0xa3) return "video/webm"; return null; };
   const mp4dur = b => { const i = b.indexOf("mvhd"); if (i < 0 || i + 32 > b.length) return null; const v = b[i + 4]; if (v === 0) { const ts = b.readUInt32BE(i + 16); return ts ? b.readUInt32BE(i + 20) / ts : null; } if (v === 1) { const ts = b.readUInt32BE(i + 24); return ts ? Number(b.readBigUInt64BE(i + 28)) / ts : null; } return null; };
-  app.post("/api/orders/:id/delivery-video", need, express.raw({ type: "application/octet-stream", limit: "32mb" }), wrap(async (req, res) => {
+  app.post("/api/orders/:id/delivery-video", need, rawOct("32mb"), wrap(async (req, res) => {
     if (!stor.on) return res.status(503).json({ error: "storage not configured", missing: ["SB_KEY"] });
     const [o] = await q("select id,buyer_id,seller_id,status from orders where id=$1", [req.params.id]); if (!o || o.seller_id !== req.user.id) throw E(404, "not found"); if (o.status === "cancelled") throw E(409, "order cancelled");
     const b = req.body; if (!Buffer.isBuffer(b)) throw E(400, "bad upload"); const m = sniff(b); if (!m) throw E(400, "Допустимы видео MP4, MOV, WebM");

@@ -2,6 +2,7 @@
 import express from "express";
 import crypto from "crypto";
 import { makeStorage } from "./storage.js";
+const rawOct = limit => { const r = express.raw({ type: "application/octet-stream", limit }); return (req, res, next) => /^application\/octet-stream/i.test(String(req.headers["content-type"] || "")) ? r(req, res, next) : next(); }; // без нужного Content-Type не трогаем тело: иначе запрос мог зависнуть
 
 export default function routes13(app, { q, tx, E, wrap, need, hooks, pushUser }) {
   const env = process.env, stor = makeStorage(env, env["DATABASE_URL"]), ADM = ["admin", "owner"];
@@ -60,7 +61,7 @@ export default function routes13(app, { q, tx, E, wrap, need, hooks, pushUser })
     const [k] = await q("insert into kyc_requests(user_id,kind,reason) values($1,'identity','Верификация по желанию: вывод без холда') returning id", [req.user.id]);
     res.status(201).json({ id: k.id });
   }));
-  app.post("/api/kyc/:id/video", need, express.raw({ type: "application/octet-stream", limit: "102mb" }), wrap(async (req, res) => {
+  app.post("/api/kyc/:id/video", need, rawOct("102mb"), wrap(async (req, res) => {
     if (!uuid(req.params.id)) throw E(404, "not found");
     const [k] = await q("select * from kyc_requests where id=$1 and user_id=$2", [req.params.id, req.user.id]); if (!k) throw E(404, "not found");
     if (!["need", "submitted"].includes(k.status)) throw E(409, "Эта проверка уже завершена");

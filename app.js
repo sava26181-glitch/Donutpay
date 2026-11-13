@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import express from "express"; import helmet from "helmet"; import cookieParser from "cookie-parser";
 import SCHEMA from "./schema_bundle.js"; import rateLimit from "express-rate-limit"; import { shieldEarly, shieldRules, antibot, shieldGate } from "./shield.js"; import bcrypt from "bcryptjs"; import jwt from "jsonwebtoken";
-import { verifyTotp, skewOf, hashBackup } from "./totp.js"; import routes9 from "./routes9.js"; import routes16 from "./routes16.js"; import routes17 from "./routes17.js"; import routes18 from "./routes18.js"; import routes10 from "./routes10.js"; import routes11 from "./routes11.js"; import routes12 from "./routes12.js"; import routes13 from "./routes13.js"; import routes14 from "./routes14.js"; import routes15 from "./routes15.js";
+import { verifyTotp, skewOf, hashBackup } from "./totp.js"; import routes9 from "./routes9.js"; import routes16 from "./routes16.js"; import routes17 from "./routes17.js"; import routes18 from "./routes18.js"; import routes19 from "./routes19.js"; import routes10 from "./routes10.js"; import routes11 from "./routes11.js"; import routes12 from "./routes12.js"; import routes13 from "./routes13.js"; import routes14 from "./routes14.js"; import routes15 from "./routes15.js";
 import pg from "pg"; import routes2 from "./routes2.js"; import routes3 from "./routes3.js"; import routes7 from "./routes7.js";
 import wf from "./wordfilter.js"; import routes8 from "./routes8.js"; import routes6 from "./routes6.js"; import sysmsg from "./sysmsg.js"; import routes4 from "./routes4.js"; import routes5 from "./routes5.js"; import { makeBadges } from "./badges.js"; import fs from "fs"; import path from "path"; import { fileURLToPath } from "url";
 const dir = path.dirname(fileURLToPath(import.meta.url));
@@ -11,9 +11,11 @@ process.on("unhandledRejection", e => console.error("[unhandledRejection]", e));
 if (!DATABASE_URL || !JWT_SECRET) throw new Error("Не заданы переменные окружения: " + [!DATABASE_URL && "DATABASE_URL", !JWT_SECRET && "JWT_SECRET"].filter(Boolean).join(", "));
 const prod = NODE_ENV === "production";
 const sslOff = /localhost|127\.0\.0\.1/.test(DATABASE_URL) || process.env["DB_SSL"] === "off" || /sslmode=disable/.test(DATABASE_URL);
-const mkPool = ssl => new pg.Pool({ connectionString: DATABASE_URL, ssl: ssl ? { rejectUnauthorized: false } : false, connectionTimeoutMillis: 15000, statement_timeout: 120000, query_timeout: 125000 });
+const mkPool = ssl => new pg.Pool({ connectionString: DATABASE_URL, ssl: ssl ? { rejectUnauthorized: false } : false, max: Math.max(5, Math.min(60, +process.env["DB_POOL"] || 20)), connectionTimeoutMillis: 15000, statement_timeout: 120000, query_timeout: 125000 });
 let pool = mkPool(!sslOff);
-const q = (t, p) => pool.query(t, p).then(r => r.rows);
+// символ NUL (%00) ломает протокол базы: соединение зависает и не возвращается в пул. Такие значения отбиваем до запроса
+const hasNul = v => typeof v === "string" ? v.includes("\u0000") : Array.isArray(v) ? v.some(hasNul) : v && typeof v === "object" && !Buffer.isBuffer(v) && !(v instanceof Date) ? Object.values(v).some(hasNul) : false;
+const q = (t, p) => { if (p && p.some(hasNul)) return Promise.reject(Object.assign(new Error("invalid input"), { status: 400 })); return pool.query(t, p).then(r => r.rows); };
 const E = (s, m) => Object.assign(new Error(m), { status: s });
 const tx = async f => { const c = await pool.connect(); try { await c.query("begin"); const r = await f(c); await c.query("commit"); return r; } catch (e) { await c.query("rollback"); throw e; } finally { c.release(); } };
 const step = async (name, sql) => { const t0 = Date.now(); globalThis.__boot = "миграция " + name; console.log("[db] " + name + "…"); await pool.query(sql); console.log("[db] " + name + " ok " + (Date.now() - t0) + " мс"); };
@@ -73,7 +75,7 @@ catch (e) {
 
 const app = express(); app.set("trust proxy", 1); app.use(shieldEarly()); app.use(shieldGate());
 app.use(helmet({ contentSecurityPolicy: { directives: { defaultSrc: ["'self'"], styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com", "https://accounts.google.com"], fontSrc: ["'self'", "data:", "https://fonts.gstatic.com"], mediaSrc: ["'self'", "blob:", "data:", "https://*.supabase.co"], scriptSrc: ["'self'", "'unsafe-inline'", "https://challenges.cloudflare.com", "https://accounts.google.com"], scriptSrcAttr: ["'unsafe-inline'"], imgSrc: ["'self'", "data:", "blob:", "https://*.supabase.co"], connectSrc: ["'self'", "https://challenges.cloudflare.com", "https://api.mymemory.translated.net", "https://accounts.google.com"], frameSrc: ["https://challenges.cloudflare.com", "https://accounts.google.com"], objectSrc: ["'none'"], baseUri: ["'self'"], frameAncestors: ["'self'"] } } }));
-app.use(express.json({ limit: "50kb" })); app.use(cookieParser()); app.use((req, res, next) => hooks.csrf ? hooks.csrf(req, res, next) : next());
+app.use(express.json({ limit: "50kb", verify: (_req, _res, buf) => { if (buf.includes(0) || /\\u0000/i.test(buf.toString("latin1"))) throw Object.assign(new Error("invalid input"), { status: 400 }); } })); app.use(cookieParser()); app.use((req, res, next) => hooks.csrf ? hooks.csrf(req, res, next) : next());
 // ---- реальное время для всех: после любого успешного изменения данных все открытые страницы получают сигнал «обновись»
 const liveC = new Set(), liveT = new Map();
 const live = (ev, d) => liveC.forEach(r => { try { r.write(`event: ${ev}\ndata: ${JSON.stringify(d || {})}\n\n`); } catch { } });
@@ -89,7 +91,7 @@ app.use("/api", (req, res, next) => {
     liveT.set(sc, setTimeout(() => { liveT.delete(sc); live("refresh", { s: sc }); }, 400));
   }); next();
 });
-const APP_VERSION = "v74";
+const APP_VERSION = "v78";
 app.get("/api/version", (_q, r) => { const h = f => { try { return crypto.createHash("sha1").update(fs.readFileSync(new URL(f, import.meta.url))).digest("hex").slice(0, 8); } catch { return null; } }; r.json({ version: APP_VERSION, files: { routes2: h("./routes2.js"), routes10: h("./routes10.js"), app: h("./app.js") } }); });
 const dbFp = async () => { const [d] = await q("select md5(current_database()||pg_postmaster_start_time()::text) f, now() n"); return { db: d.f.slice(0, 6), db_time: d.n }; };
 app.get("/api/diag", async (_q, r) => { try { r.json({ version: APP_VERSION, host: _q.headers["x-forwarded-host"] || _q.headers.host, server_time: new Date().toISOString(), ...(await dbFp()) }); } catch (e) { r.status(500).json({ error: "db" }); } });
@@ -227,8 +229,17 @@ routes15(app, { q, E, wrap, need, hooks, pushUser });
 await routes16(app, { q, E, wrap, need, hooks, notifyStaff: t => r2.notifyStaff?.(t) });
 await routes17(app, { q, E, wrap, need });
 routes18(app, { q, E, wrap, need, hooks, pushUser, notifyStaff: t => r2.notifyStaff?.(t) });
+routes19(app, { q, E, wrap, JWT_SECRET, port: +process.env.PORT || 3000, pool, notifyStaff: t => r2.notifyStaff?.(t) });
 routes8(app, { q, pool, tx, E, wrap, need, hooks, pushUser, online: uid => online(uid), notifyStaff: t => r2.notifyStaff?.(t) });
+// каталог одинаков для всех: одинаковые запросы в течение 3 секунд отдаём из памяти (и один запрос в базу вместо сотен одновременных)
+const lcache = new Map();
 app.get("/api/listings", wrap(async (req, res) => {
+  const ck = req.originalUrl, hit = lcache.get(ck), now = Date.now();
+  if (hit && now - hit.t < 3000) return res.json(await hit.p);
+  const p0 = listingsQuery(req); lcache.set(ck, { t: now, p: p0 }); if (lcache.size > 300) { for (const [k, v] of lcache) if (now - v.t > 3000) lcache.delete(k); if (lcache.size > 300) lcache.clear(); }
+  try { res.json(await p0); } catch (e) { lcache.delete(ck); throw e; }
+}));
+const listingsQuery = async (req) => {
   const { game, category, min, max, q: s, seller, sort, offset } = req.query, w = ["l.status='active'"], p = [];
   const add = (c, v) => { p.push(v); w.push(c.replaceAll("?", "$" + p.length)); };
   w.push("l.stock>0"); // проданные до нуля лоты не показываем в каталоге (продавец видит их в «Мои объявления»)
@@ -240,8 +251,8 @@ app.get("/api/listings", wrap(async (req, res) => {
   if (+req.query.rating > 0) add("coalesce(r.avg,0)>=?", +req.query.rating);
   const ord = { cheap: "l.price_cents asc", expensive: "l.price_cents desc", rating: "coalesce(r.avg,0) desc", new: "l.created_at desc" }[sort] || "l.created_at desc";
   const boost = (!sort || sort === "new") ? "exists(select 1 from duel_boosts db where db.user_id=l.seller_id and db.until>now()) desc, " : "";
-  { const rows = await q(`select ${LCOLS} ${LFROM} where ${w.join(" and ")} order by ${boost}${ord} limit 50 offset ${Math.max(0, +offset || 0)}`, p); const bm = await B.badgesFor(rows.map(r => r.seller_id)); res.json(rows.map(r => ({ ...r, online: online(r.seller_id), badges: bm[r.seller_id] || [] }))); }
-}));
+  { const rows = await q(`select ${LCOLS} ${LFROM} where ${w.join(" and ")} order by ${boost}${ord} limit 50 offset ${Math.max(0, +offset || 0)}`, p); const bm = await B.badgesFor(rows.map(r => r.seller_id)); return rows.map(r => ({ ...r, online: online(r.seller_id), badges: bm[r.seller_id] || [] })); }
+};
 app.get("/api/listings/:id", wrap(async (req, res) => {
   const [l] = await q(`select ${LCOLS},l.details,l.deactivate_on_sale,l.attrs,l.image_media,l.seller_id,l.status,case when l.seller_id=$2 then l.after_msg end after_msg,case when l.seller_id=$2 then l.auto_items end auto_items ${LFROM} where l.id=$1 and (l.status='active' or l.seller_id=$2 or exists(select 1 from users x where x.id=$2 and x.role in ('moderator','admin','owner')))`, [req.params.id, req.user?.id || null]);
   if (!l) throw E(404, "not found"); res.json({ ...l, online: online(l.seller_id), badges: (await B.badgesFor([l.seller_id]))[l.seller_id] || [] });

@@ -25,10 +25,14 @@ export const IP_RE = /^[0-9a-fA-F:.]{3,45}$/;
 function tooMany(res, retry, msg) { res.setHeader("Retry-After", String(retry)); return res.status(429).json({ error: msg || "too many requests", retry }); }
 
 // 1) самый ранний слой: настоящий IP за Cloudflare, бан, общий лимит по IP, длина URL, методы
+// запросы внутреннего нагрузочного теста (кнопка владельца): с этого же сервера и с одноразовым ключом, который знает только запущенный тест
+export const isLoad = req => { const k = globalThis.__dpLoadKey; return !!k && req.headers["x-load-key"] === k && /^(::1|127\.|::ffff:127\.)/.test(String(req.socket?.remoteAddress || "")); };
 export function shieldEarly() {
   return (req, res, next) => {
+    if (isLoad(req)) return next();
     if (env().CF_PROXY === "1") { const c = String(req.headers["cf-connecting-ip"] || "").trim(); if (IP_RE.test(c)) Object.defineProperty(req, "ip", { value: c, configurable: true }); }
     if (req.url.length > 2000) return res.status(414).end();
+    if (/%00/i.test(req.url)) return res.status(400).json({ error: "invalid input" });
     if (!["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"].includes(req.method)) return res.status(405).end();
     if (req.path === "/health") return next();
     const ip = String(req.ip || "?"), now = Date.now(), until = bans.get(ip);
@@ -159,6 +163,7 @@ function passCheck(req, res) {
 }
 export function shieldGate() {
   return (req, res, next) => {
+    if (isLoad(req)) return next();
     const p = req.path; if (p === "/health") return next();
     if (p === "/__dp/pass") return passCheck(req, res);
     if (!/\.(js|css|webp|png|jpe?g|svg|ico|woff2?|gif|mp4|txt|xml)$/i.test(p)) { tick(); const lim = numE(env().ATTACK_RPS, 150); if (avgRps() > lim) trip("всплеск запросов: " + Math.round(avgRps()) + " в секунду"); } // считаем страницы и API, не картинки

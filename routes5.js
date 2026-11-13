@@ -95,13 +95,20 @@ export default function routes5(app, { q, pool, tx, E, wrap, need, hooks, pushUs
   };
   app.get("/api/me/balance", need, wrap(async (req, res) => { const [w] = await q("select balance from wallets where user_id=$1", [req.user.id]); res.json({ balance: Number(w?.balance || 0) }); }));
   app.get("/api/finance", need, wrap(async (req, res) => {
-    const type = String(req.query.type || "all"), [w] = await q("select balance from wallets where user_id=$1", [req.user.id]);
+    const type = String(req.query.type || "all"), uid = req.user.id;
     const f = { in: "l.amount>0", out: "l.amount<0 and l.kind<>'withdraw'", withdraw: "l.kind in ('withdraw','withdraw_refund')", all: "true" }[type] || "true";
-    const ops = await q(`select l.id,l.kind,l.amount,l.created_at,l.ref_type,l.ref_id,o.number order_number,w.status w_status,(select count(*) from withdrawal_msgs m where m.withdrawal_id=w.id)::int w_msgs from ledger_entries l left join orders o on l.ref_type='order' and o.id::text=l.ref_id left join withdrawals w on l.ref_type='withdrawal' and w.id::text=l.ref_id where l.user_id=$1 and ${f} order by l.id desc limit 100`, [req.user.id]);
-    const [tt] = await q("select coalesce(sum(amount) filter (where amount>0 and kind<>'withdraw_refund'),0) inn,coalesce(-sum(amount) filter (where amount<0 and kind<>'withdraw'),0) outt from ledger_entries where user_id=$1", [req.user.id]), [pw] = await q("select coalesce(sum(amount),0) s from withdrawals where user_id=$1 and status='pending'", [req.user.id]);
-    const [fz] = await q("select coalesce(sum(amount),0) s from holds where user_id=$1 and status='held' and (release_at is null or release_at>now())", [req.user.id]);
-    const hl = await q("select h.amount::float amount,h.release_at,h.reason,o.number from holds h join orders o on o.id=h.order_id where h.user_id=$1 and h.status='held' and (h.release_at is null or h.release_at>now()) order by h.created_at desc limit 20", [req.user.id]), [iv] = await q("select id_verified_at from users where id=$1", [req.user.id]);
-    res.json({ totals: { in: Number(tt.inn), out: Number(tt.outt), pending: Number(pw.s) }, balance: Number(w?.balance || 0), frozen: Number(fz.s), holds: hl, ...(hooks.withdrawInfo ? await hooks.withdrawInfo(req.user.id) : {}), id_verified: !!iv?.id_verified_at, hold_hours: hooks.holdHours?.() || 72, available: Math.max(0, Number(w?.balance || 0) - Number(fz.s)), test_mode: TEST(), ops: ops.map(x => ({ ...x, amount: Number(x.amount) })) });
+    // независимые запросы идут параллельно; операции сначала режем до 100 строк и только потом соединяем с заказами и выводами
+    const [[w], ops, [tt], [pw], [fz], hl, [iv], wi] = await Promise.all([
+      q("select balance from wallets where user_id=$1", [uid]),
+      q(`with l as (select id,kind,amount,created_at,ref_type,ref_id from ledger_entries l where user_id=$1 and ${f} order by id desc limit 100) select l.id,l.kind,l.amount,l.created_at,l.ref_type,l.ref_id,o.number order_number,w.status w_status,(select count(*) from withdrawal_msgs m where m.withdrawal_id=w.id)::int w_msgs from l left join orders o on l.ref_type='order' and o.id::text=l.ref_id left join withdrawals w on l.ref_type='withdrawal' and w.id::text=l.ref_id order by l.id desc`, [uid]),
+      q("select coalesce(sum(amount) filter (where amount>0 and kind<>'withdraw_refund'),0) inn,coalesce(-sum(amount) filter (where amount<0 and kind<>'withdraw'),0) outt from ledger_entries where user_id=$1", [uid]),
+      q("select coalesce(sum(amount),0) s from withdrawals where user_id=$1 and status='pending'", [uid]),
+      q("select coalesce(sum(amount),0) s from holds where user_id=$1 and status='held' and (release_at is null or release_at>now())", [uid]),
+      q("select h.amount::float amount,h.release_at,h.reason,o.number from holds h join orders o on o.id=h.order_id where h.user_id=$1 and h.status='held' and (h.release_at is null or h.release_at>now()) order by h.created_at desc limit 20", [uid]),
+      q("select id_verified_at from users where id=$1", [uid]),
+      hooks.withdrawInfo ? hooks.withdrawInfo(uid) : Promise.resolve({})
+    ]);
+    res.json({ totals: { in: Number(tt.inn), out: Number(tt.outt), pending: Number(pw.s) }, balance: Number(w?.balance || 0), frozen: Number(fz.s), holds: hl, ...wi, id_verified: !!iv?.id_verified_at, hold_hours: hooks.holdHours?.() || 72, available: Math.max(0, Number(w?.balance || 0) - Number(fz.s)), test_mode: TEST(), ops: ops.map(x => ({ ...x, amount: Number(x.amount) })) });
   }));
   app.post("/api/finance/topup", need, wrap(async (req, res) => {
     if (!TEST()) throw E(403, "test top-up disabled");
