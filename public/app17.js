@@ -37,6 +37,7 @@
     const note = ok ? (CUR.c === "RUB" ? "" : `<p class="xf-rate">Курс ЦБ на ${dt(r.at)}: 1 ${SYM[CUR.c]} = ${(CUR.c === "USD" ? r.usd : r.eur).toLocaleString("ru-RU", { maximumFractionDigits: 2 })} ₽. Суммы показаны для удобства, оплата и вывод идут в рублях.</p>`) : `<p class="xf-rate">Курс валют пока недоступен, суммы показаны в рублях.</p>`;
     return `<div class="xp-seg xf-cur" role="group" aria-label="Валюта">${["RUB", "USD", "EUR"].map(c => `<button type="button" class="${CUR.c === c ? "on" : ""}"${c !== "RUB" && !ok ? " disabled" : ""} onclick="curSet('${c}')">${SYM[c]}</button>`).join("")}</div>${note}`;
   };
+  window.curSw = sw;
   const _fp = window.financePage;
   if (typeof _fp === "function") window.financePage = async function () {
     const h = await _fp.apply(this, arguments);

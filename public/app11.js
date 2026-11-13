@@ -42,7 +42,7 @@
   window.notifPage = async function () {
     need(); const ns = await api("/notifications");
     api("/notifications/read", { method: "POST" }).then(() => { NOTIF = 0; nav(location.hash.slice(1) || "/") }).catch(() => { });
-    const to = n => n.type === "listing_review" ? "/admin?tab=listings&st=pending" : ["price_drop", "flash"].includes(n.type) ? "/l/" + n.payload.listing_id : n.payload.order_id ? "/order/" + n.payload.order_id : "/orders";
+    const to = n => n.type === "wd_msg" ? "/finance?wd=" + n.payload.withdrawal_id : n.type === "listing_review" ? "/admin?tab=listings&st=pending" : ["price_drop", "flash"].includes(n.type) ? "/l/" + n.payload.listing_id : n.payload.order_id ? "/order/" + n.payload.order_id : "/orders";
     return `<h2>Уведомления</h2>${ns.map(n => `<div class="card" style="cursor:pointer;${n.read_at ? "opacity:.7" : ""}" onclick="go('${to(n)}')"><div>${ordLink(esc(notifText({ type: n.type, ...n.payload })), n.payload.order_id)}</div><small class="m">${new Date(n.created_at).toLocaleString("ru-RU")}</small></div>`).join("") || empty("Уведомлений пока нет.")}`;
   };
 
