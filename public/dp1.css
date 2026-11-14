@@ -25,3 +25,15 @@ h2:has(+.dp-ban) .dp-t,.fx-head:has(+.dp-ban) .dp-t{display:none}
 /* текст баннера по центру высоты, холмы остаются под ним */
 .dp-ban{justify-content:center;padding-bottom:22px}
 .dp-ban::after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,rgba(15,7,36,.8),rgba(15,7,36,0) 62%);pointer-events:none}
+/* страницы в цвет баннера: тёмный фиолет */
+:root,html[data-theme],body{--bg:#0E0722;--c:#171030;--line:#2B2152}
+body{background:linear-gradient(180deg,#1A0E3D 0,#0E0722 320px) no-repeat,#0E0722!important}
+/* знак в шапке не крутится */
+.lga svg,.lga{animation:none!important}
+/* «Новое объявление» на странице «Мои объявления» убрано */
+#app>h2+button[onclick*="/sell"]{display:none!important}
+/* нижнее меню: под ним ничего не просвечивает */
+.bn{z-index:90!important}
+.bn::after{background:var(--bg)!important;height:240px!important}
+/* поля ввода в тон страницам */
+input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=file]):not([type=color]),textarea,select{background:#0A0519!important}
