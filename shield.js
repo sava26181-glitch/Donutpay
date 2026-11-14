@@ -81,7 +81,7 @@ export function shieldRules() {
     // по email: не больше N попыток на один аккаунт, чтобы нельзя было перебирать пароль с разных IP
     const em = String(req.body?.email || "").trim().toLowerCase().slice(0, 120);
     if (em && req.method === "POST") {
-      if (req.path === "/api/auth/login") { const r = hit("le:" + em, 12, 15 * 60e3); if (!r.ok) return tooMany(res, r.retry, "too many attempts"); }
+      if (req.path === "/api/auth/login") { const r = hit("le:" + em + ":" + ip, 12, 15 * 60e3), r2 = hit("le2:" + em, 80, 15 * 60e3); if (!r.ok || !r2.ok) return tooMany(res, (r.ok ? r2 : r).retry, "too many attempts"); }
       if (req.path === "/api/auth/reset/request") { const r = hit("re:" + em, 4, 3600e3); if (!r.ok) return tooMany(res, r.retry, "too many attempts"); }
     }
     next();

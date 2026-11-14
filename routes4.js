@@ -255,6 +255,7 @@ export default function routes4(app, { q, pool, tx, E, wrap, need, pushUser, L, 
     const [u] = await q("select id,username from users where email=$1", [email]); const bad = () => E(400, "invalid or expired code"); if (!u || !code) throw bad();
     hooks.weakPw?.(pw, u.username, email);
     const [r] = await q("select id,code_hash,tries from pw_resets where user_id=$1 and used_at is null and expires_at>now() order by created_at desc limit 1", [u.id]); if (!r || r.tries >= 5) throw bad();
+    { const [tt] = await q("select coalesce(sum(tries),0)::int n from pw_resets where user_id=$1 and created_at>now()-interval '1 hour'", [u.id]); if (tt.n >= 10) throw bad(); } // не больше 10 ошибок кода в час
     if (r.code_hash !== h(code)) { await q("update pw_resets set tries=tries+1 where id=$1", [r.id]); throw bad(); }
     await q("update users set password_hash=$2 where id=$1", [u.id, await bcrypt.hash(pw, 10)]); await q("update pw_resets set used_at=now() where user_id=$1 and used_at is null", [u.id]); await hooks.bumpTokens?.(u.id);
     audit(u.id, "password_reset", "user", u.id); res.json({ ok: true });

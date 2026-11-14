@@ -15,13 +15,21 @@ export default function routes2(app, { q, pool, tx, E, wrap, need, online, B, ho
 
   // ---- media (хранится в БД; проверка сигнатуры файла, а не заголовка клиента)
   const mime = b => b.length < 12 ? null : b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47 ? "image/png" : b[0] === 0xff && b[1] === 0xd8 ? "image/jpeg" : b.slice(0, 3).toString() === "GIF" ? "image/gif" : b.slice(0, 4).toString() === "RIFF" && b.slice(8, 12).toString() === "WEBP" ? "image/webp" : null;
+  // убираем метаданные (геометка, модель телефона): JPEG APP1..APPn/COM и текстовые блоки PNG
+  const stripMeta = (b, m) => {
+    try {
+      if (m === "image/jpeg") { const out = [b.subarray(0, 2)]; let i = 2; while (i + 4 <= b.length && b[i] === 0xff) { const mk = b[i + 1]; if (mk === 0xda) { out.push(b.subarray(i)); i = b.length; break; } const len = b.readUInt16BE(i + 2); if (len < 2 || i + 2 + len > b.length) return b; if (!((mk >= 0xe1 && mk <= 0xef) || mk === 0xfe)) out.push(b.subarray(i, i + 2 + len)); i += 2 + len; } return i >= b.length ? Buffer.concat(out) : b; }
+      if (m === "image/png") { const out = [b.subarray(0, 8)]; let i = 8; while (i + 12 <= b.length) { const len = b.readUInt32BE(i), t = b.toString("latin1", i + 4, i + 8), end = i + 12 + len; if (end > b.length) return b; if (!["tEXt", "iTXt", "zTXt", "eXIf", "tIME"].includes(t)) out.push(b.subarray(i, end)); i = end; } return Buffer.concat(out); }
+    } catch { }
+    return b;
+  };
   const LIM = { avatar: 2e6, cover: 5e6, listing: 5e6, news: 5e6, tour: 5e6 };
   app.post("/api/media", need, rawOct("6mb"), wrap(async (req, res) => {
-    const kind = req.query.kind, b = req.body; if (!LIM[kind] || !Buffer.isBuffer(b)) throw E(400, "bad upload");
-    const m = mime(b); if (!m) throw E(400, "only png, jpeg, webp, gif"); if (b.length > LIM[kind]) throw E(400, "file too large"); if (m === "image/gif" && kind !== "cover" && kind !== "news" && kind !== "tour") throw E(400, "gif only for cover");
+    const kind = req.query.kind; let b = req.body; if (!LIM[kind] || !Buffer.isBuffer(b)) throw E(400, "bad upload");
+    const m = mime(b); if (!m) throw E(400, "only png, jpeg, webp, gif"); b = stripMeta(b, m); if (b.length > LIM[kind]) throw E(400, "file too large"); if (m === "image/gif" && kind !== "cover" && kind !== "news" && kind !== "tour") throw E(400, "gif only for cover");
     if (kind === "tour") { const [u] = await q("select role from users where id=$1", [req.user.id]); if (!["organizer", "moderator", "admin", "owner"].includes(u?.role)) { const [h] = await q("select 1 from tournament_helpers where user_id=$1 limit 1", [req.user.id]); if (!h) throw E(403, "forbidden"); } }
     if (kind === "news") { const [u] = await q("select role from users where id=$1", [req.user.id]); if (!["admin", "owner"].includes(u?.role)) throw E(403, "forbidden"); }
-    const [c] = await q("select count(*)::int n from media where owner_id=$1 and kind not in ('news','tour')", [req.user.id]); if (kind !== "news" && kind !== "tour" && c.n >= 300) throw E(429, "media limit reached");
+    const [c] = await q("select count(*)::int n from media where owner_id=$1 and kind not in ('news','tour')", [req.user.id]); if (kind !== "news" && kind !== "tour" && c.n >= 60) throw E(429, "media limit reached");
     const ext = { "image/png": "png", "image/jpeg": "jpg", "image/gif": "gif", "image/webp": "webp" }[m];
     if (stor.on) {
       const path = `${kind}/${req.user.id}/${crypto.randomUUID()}.${ext}`;
@@ -138,7 +146,7 @@ export default function routes2(app, { q, pool, tx, E, wrap, need, online, B, ho
       if (/^[A-Za-z0-9]{8}$/.test(cd)) { guess(from); m.text = "/start " + cd.toUpperCase(); }
     }
     if (typeof m.text === "string" && /^\/(version|ping)(@\w+)?$/i.test(m.text.trim())) return say(from, "Бот DonutPay работает. Версия обработчика: v61 (код отправляется в чат одним сообщением).");
-    if (typeof m.text === "string" && /^\/diag(@\w+)?$/i.test(m.text.trim())) { const d = await hooks.dbFp?.().catch(() => null); return say(from, `Диагностика бота. Версия v61+, время сервера: ${new Date().toISOString()}, база: ${d ? d.db : "нет доступа"}, адрес этого сервера: ${req.headers["x-forwarded-host"] || req.headers.host || "?"}, SITE_URL: ${SITE || env.RENDER_EXTERNAL_URL || "не задан"}. Сравните с https://ВАШ-САЙТ/api/diag: «база» должна совпадать.`); }
+    if (typeof m.text === "string" && /^\/diag(@\w+)?$/i.test(m.text.trim())) { if (String(from) !== String(ACH || "") && !OWN.includes(String(from))) return; const d = await hooks.dbFp?.().catch(() => null); return say(from, `Диагностика бота. Версия v61+, время сервера: ${new Date().toISOString()}, база: ${d ? d.db : "нет доступа"}, адрес этого сервера: ${req.headers["x-forwarded-host"] || req.headers.host || "?"}, SITE_URL: ${SITE || env.RENDER_EXTERNAL_URL || "не задан"}. Сравните с https://ВАШ-САЙТ/api/diag: «база» должна совпадать.`); }
     console.log("[telegram:verify] update:", m.contact ? "contact" : String(m.text || "").split(" ")[0].slice(0, 12));
     if (m.text === "/cancel") { await q("update seller_verifications set status='failed' where telegram_id=$1 and status='awaiting_contact'", [from]); return say(from, "Верификация отменена. Вы можете начать заново на сайте.", { reply_markup: { remove_keyboard: true } }); }
     if (typeof m.text === "string" && m.text.startsWith("/start")) {
@@ -212,6 +220,7 @@ export default function routes2(app, { q, pool, tx, E, wrap, need, online, B, ho
     const flag = b.status === "archived" ? null : wf(b.title, b.summary, b.details, Object.values(cleanAttrs(b.attrs)));
     // v44: после правки текста лот снова проверяет модератор (для продавца); цена и количество проверки не требуют
     const [ed] = await q("select role from users where id=$1", [req.user.id]), isStaffEd = ["moderator", "admin", "owner"].includes(ed?.role);
+    if (!isStaffEd && b.status !== "archived" && (l.status === "rejected" || (l.status === "archived" && l.mod_reason))) throw E(403, "Лот отклонён или скрыт модератором. Напишите в поддержку, чтобы его вернули");
     const textChanged = String(b.title) !== l.title || String(b.summary || "") !== String(l.summary || "") || String(b.details || "") !== String(l.details || "");
     const recheck = b.status !== "archived" && !isStaffEd && hooks.premod?.() && (textChanged || ["pending", "rejected"].includes(l.status) || (l.status === "archived" && l.mod_reason));
     const hold = flag ? "Автопроверка: " + flag : (recheck ? "Лот изменён: ожидает проверки модератором" : null);
@@ -229,9 +238,11 @@ export default function routes2(app, { q, pool, tx, E, wrap, need, online, B, ho
   // ADMIN_TG="123456789:ник:owner,987654321:другойник" - Telegram ID : ник / номер профиля / email : роль (необязательно)
   const TGMAP = String(env.ADMIN_TG || env.ADMIN_TG_IDS || "").split(/[,;\n]+/).map(x => x.trim()).filter(Boolean).map(x => { const [id, who, role] = x.split(":").map(y => y.trim()); return { id, who: who || "", role: ["owner", "admin", "moderator"].includes(role) ? role : null }; }).filter(x => /^\d+$/.test(x.id));
   for (const e of TGMAP) if (!OWN.includes(e.id)) OWN.push(e.id);
-  const syncTg = async from => {
+  const syncTg = async (from, proven = false) => {
     const e = TGMAP.find(x => x.id === String(from)); if (!e || !e.who) return null; const w = e.who.replace(/^@/, "");
-    const [u] = await q("select id,username,role from users where lower(username)=lower($1) or public_id::text=$1 or lower(email)=lower($1) limit 1", [w]); if (!u) return { missing: w };
+    const [u] = await q("select id,username,role,telegram_id,admin_telegram_id from users where lower(username)=lower($1) or public_id::text=$1 or lower(email)=lower($1) order by (username=$1) desc,created_at limit 1", [w]); if (!u) return { missing: w };
+    // роль выдаётся только аккаунту, уже привязанному к этому Telegram ID: ник или почту может занять кто угодно
+    if (String(u.telegram_id || "") !== String(from) && String(u.admin_telegram_id || "") !== String(from)) return { missing: w, unproven: true };
     const role = e.role || (ST.includes(u.role) ? u.role : "admin");
     await q("update users set admin_telegram_id=null where admin_telegram_id=$1 and id<>$2", [from, u.id]);
     await q("update users set admin_telegram_id=$2,role=$3 where id=$1", [u.id, from, role]);
@@ -265,7 +276,7 @@ export default function routes2(app, { q, pool, tx, E, wrap, need, online, B, ho
       await audit(t.user_id, "admin_bot_link", "user", t.user_id, { telegram_id: from }); return abSay(from, `Привязано: ${u.username} (${u.role}). Команды: /me /grant /revoke /audit`);
     }
     if (cmd === "/id") return abSay(from, `Ваш Telegram ID: ${from}`);
-    const sy = await syncTg(from); if (sy?.missing) return abSay(from, `Аккаунт «${sy.missing}» из ADMIN_TG не найден на сайте. Зарегистрируйтесь с этим ником или почтой и отправьте /start ещё раз.`);
+    const sy = await syncTg(from, true); if (sy?.unproven) return abSay(from, `Роль не выдана: аккаунт «${sy.missing}» ещё не привязан к этому Telegram. Войдите на сайт под этим аккаунтом, откройте «Настройки», нажмите «Привязать Telegram» и отправьте /start ещё раз.`); if (sy?.missing) return abSay(from, `Аккаунт «${sy.missing}» из ADMIN_TG не найден на сайте. Зарегистрируйтесь с этим ником или почтой и отправьте /start ещё раз.`);
     const [me] = await q("select id,username,role from users where admin_telegram_id=$1", [from]);
     if (!me || !ST.includes(me.role) || (me.role === "owner" && OWN.length && !OWN.includes(String(from)))) return abSay(from, `Нет доступа. Ваш Telegram ID: ${from}.\nДобавьте его в переменную ADMIN_TG на Render в формате ID:ник (например ${from}:Sava228), либо привяжите аккаунт через админ-панель сайта.`);
     console.log("[telegram:admin] command:", String(cmd).slice(0, 12), "role:", me.role);
@@ -373,8 +384,8 @@ export default function routes2(app, { q, pool, tx, E, wrap, need, online, B, ho
   // ---- вложения (приватный бакет Supabase Storage, доступ только по короткоживущим ссылкам)
   const amime = b => mime(b) || (b.slice(0, 5).toString() === "%PDF-" ? "application/pdf" : null);
   app.post("/api/attachments", need, rawOct("6mb"), wrap(async (req, res) => {
-    const ctx = req.query.context, ref = String(req.query.ref || ""), b = req.body; if (!["chat", "ticket", "dispute"].includes(ctx) || !Buffer.isBuffer(b)) throw E(400, "bad upload");
-    const m = amime(b); if (!m) throw E(400, "allowed: png, jpeg, webp, gif, pdf"); if (b.length > 5e6) throw E(400, "file too large (max 5 MB)");
+    const ctx = req.query.context, ref = String(req.query.ref || ""); let b = req.body; if (!["chat", "ticket", "dispute"].includes(ctx) || !Buffer.isBuffer(b)) throw E(400, "bad upload");
+    const m = amime(b); if (!m) throw E(400, "allowed: png, jpeg, webp, gif, pdf"); b = stripMeta(b, m); if (b.length > 5e6) throw E(400, "file too large (max 5 MB)");
     if (ctx === "chat") { const [c] = await q("select id from conversations where id=$1 and $2 in (buyer_id,seller_id)", [ref, req.user.id]); if (!c) throw E(404, "not found"); }
     if (ctx === "dispute") await dpart(ref, req.user.id);
     const [n] = await q("select count(*)::int n from attachments where owner_id=$1 and created_at>now()-interval '1 hour'", [req.user.id]); if (n.n >= 30) throw E(429, "too many uploads");
@@ -400,7 +411,7 @@ export default function routes2(app, { q, pool, tx, E, wrap, need, online, B, ho
   app.get("/api/attachments/:id/file", need, wrap(async (req, res) => {
     const a = await attAccess(req.params.id, req.user.id); if (a.bucket !== "db") throw E(404, "not found");
     const [f] = await q("select data from attachment_blobs where attachment_id=$1", [a.id]); if (!f) throw E(404, "not found");
-    res.set({ "Content-Type": a.mime, "X-Content-Type-Options": "nosniff", "Cache-Control": "private, max-age=300", "Content-Disposition": "inline" }).send(f.data);
+    res.set({ "Content-Type": a.mime, "X-Content-Type-Options": "nosniff", "Cache-Control": "private, max-age=300", "Content-Disposition": a.mime === "application/pdf" ? "attachment" : "inline", "Content-Security-Policy": "default-src 'none'; sandbox" }).send(f.data);
   }));
   // ---- админка: пользователи, объявления, заказы, аудит
   app.get("/api/admin/users", need, staff(...ST), wrap(async (req, res) => res.json(await q("select id,public_id,username,email,role,is_seller,seller_verified,blocked_until,block_reason,created_at from users where ($1::text is null or username ilike $1 or email ilike $1 or public_id::text=$2) order by created_at desc limit 100", [req.query.q ? "%" + String(req.query.q).trim().replace(/[%_\\]/g, "") + "%" : null, String(req.query.q || "").trim().replace(/^#/, "")]))));

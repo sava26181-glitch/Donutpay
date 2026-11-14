@@ -1,0 +1,42 @@
+/* DonutPay: фирменный мотив «глазурь и дырка пончика». Палитра прежняя, меняется форма и детали. */
+:root{--dp-g1:#C4B5FD;--dp-g2:#8B5CF6;--dp-dough:#4C1D95;--dp-s1:#F472B6;--dp-s2:#5EEAD4;--dp-s3:#FDE047}
+/* главный блок: глазурь стекает сверху, справа большой пончик */
+.promo{position:relative;overflow:hidden;border-radius:26px;padding-top:44px!important;isolation:isolate}
+.promo>*:not(.dp-art):not(.dp-drip){position:relative;z-index:2}
+.dp-drip{position:absolute;left:0;right:0;top:0;height:30px;z-index:1;pointer-events:none;transform-origin:top;animation:dpdrip .9s cubic-bezier(.2,.8,.2,1) both}
+.dp-drip svg{display:block;width:100%;height:100%}
+@keyframes dpdrip{from{transform:scaleY(0)}to{transform:scaleY(1)}}
+.dp-art{position:absolute;right:-78px;bottom:-84px;width:210px;height:210px;z-index:1;pointer-events:none;opacity:.95}
+.dp-art svg{width:100%;height:100%;animation:dpspin 70s linear infinite}
+@keyframes dpspin{to{transform:rotate(360deg)}}
+@media(max-width:760px){.promo p{max-width:58%}}
+@media(min-width:761px){.dp-art{right:30px;bottom:auto;top:50%;margin-top:-150px;width:300px;height:300px}.dp-art svg{animation-duration:90s}}
+@media(prefers-reduced-motion:reduce){.dp-art svg,.dp-drip{animation:none}}
+/* плитки: у каждой маленькое кольцо-«пончик» вместо бесформенной иконки-пятна */
+.qk a{position:relative;overflow:hidden;border-radius:20px!important;transition:transform .18s ease,border-color .18s ease}
+.qk a::after{content:"";position:absolute;right:-26px;top:-26px;width:56px;height:56px;border-radius:50%;border:9px solid color-mix(in srgb,var(--p) 38%,transparent);pointer-events:none}
+.qk a:active{transform:scale(.98)}
+@media(hover:hover){.qk a:hover{border-color:color-mix(in srgb,var(--p) 55%,transparent)!important}}
+/* заголовки разделов: «посыпка» вместо подчёркивания */
+.row.bet h2{display:flex;align-items:center;gap:10px}
+.row.bet h2::after{content:"";width:38px;height:8px;border-radius:4px;background:
+ linear-gradient(90deg,var(--dp-s1) 0 8px,transparent 8px 15px,var(--dp-s2) 15px 23px,transparent 23px 30px,var(--dp-s3) 30px 38px);opacity:.9}
+/* пустые состояния: пончик вместо серой коробки */
+.card.m[style*="text-align:center"]{padding:26px 20px;border-style:dashed}
+.card.m[style*="text-align:center"]::before{content:"";display:block;width:58px;height:58px;margin:0 auto 12px;border-radius:50%;
+ background:radial-gradient(circle,var(--bg) 0 24%,transparent 25%),radial-gradient(circle at 34% 28%,var(--dp-g1),var(--dp-g2) 62%,var(--dp-dough) 100%);
+ box-shadow:0 0 0 3px color-mix(in srgb,var(--p) 18%,transparent)}
+/* нижнее меню: активная вкладка с глазурной полоской */
+#bn a{position:relative}
+#bn a.on::before{content:"";position:absolute;top:0;left:30%;right:30%;height:3px;border-radius:0 0 6px 6px;background:linear-gradient(90deg,var(--dp-g1),var(--dp-g2))}
+#bn a.on svg{filter:drop-shadow(0 0 7px color-mix(in srgb,var(--p) 65%,transparent))}
+/* шапка: тонкая линия-глазурь вместо серой границы */
+#hd{border-bottom:0!important;position:relative}
+#hd::after{content:"";position:absolute;left:0;right:0;bottom:0;height:1px;background:linear-gradient(90deg,transparent,color-mix(in srgb,var(--p) 55%,transparent) 20%,color-mix(in srgb,var(--p) 55%,transparent) 80%,transparent)}
+/* подвал компактнее */
+#ft{padding-top:18px!important;padding-bottom:calc(86px + env(safe-area-inset-bottom))!important}
+#ft a{font-size:13px}
+/* чат: плавно раскрывается, когда прячется клавиатура */
+body.inchat .mm.ch .mc2{transition:height .24s ease-out,top .24s ease-out!important;will-change:height,top}
+body.inchat .mm.ch .mc2 .chm{scroll-behavior:smooth}
+body.inchat .mm.ch .mc2 .cmp3{transition:padding .2s ease}

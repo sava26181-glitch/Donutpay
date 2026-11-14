@@ -1,3 +1,4 @@
+import zlib from "zlib";
 import crypto from "node:crypto";
 import express from "express"; import helmet from "helmet"; import cookieParser from "cookie-parser";
 import SCHEMA from "./schema_bundle.js"; import rateLimit from "express-rate-limit"; import { shieldEarly, shieldRules, antibot, shieldGate } from "./shield.js"; import bcrypt from "bcryptjs"; import jwt from "jsonwebtoken";
@@ -11,7 +12,7 @@ process.on("unhandledRejection", e => console.error("[unhandledRejection]", e));
 if (!DATABASE_URL || !JWT_SECRET) throw new Error("Не заданы переменные окружения: " + [!DATABASE_URL && "DATABASE_URL", !JWT_SECRET && "JWT_SECRET"].filter(Boolean).join(", "));
 const prod = NODE_ENV === "production";
 const sslOff = /localhost|127\.0\.0\.1/.test(DATABASE_URL) || process.env["DB_SSL"] === "off" || /sslmode=disable/.test(DATABASE_URL);
-const mkPool = ssl => new pg.Pool({ connectionString: DATABASE_URL, ssl: ssl ? { rejectUnauthorized: false } : false, max: Math.max(5, Math.min(60, +process.env["DB_POOL"] || 20)), connectionTimeoutMillis: 15000, statement_timeout: 120000, query_timeout: 125000 });
+const mkPool = ssl => new pg.Pool({ connectionString: DATABASE_URL, ssl: ssl ? { rejectUnauthorized: process.env["DB_SSL_STRICT"] === "on" } : false, max: Math.max(5, Math.min(60, +process.env["DB_POOL"] || 20)), connectionTimeoutMillis: 15000, statement_timeout: 120000, query_timeout: 125000 });
 let pool = mkPool(!sslOff);
 // символ NUL (%00) ломает протокол базы: соединение зависает и не возвращается в пул. Такие значения отбиваем до запроса
 const hasNul = v => typeof v === "string" ? v.includes("\u0000") : Array.isArray(v) ? v.some(hasNul) : v && typeof v === "object" && !Buffer.isBuffer(v) && !(v instanceof Date) ? Object.values(v).some(hasNul) : false;
@@ -21,9 +22,10 @@ const tx = async f => { const c = await pool.connect(); try { await c.query("beg
 const step = async (name, sql) => { const t0 = Date.now(); globalThis.__boot = "миграция " + name; console.log("[db] " + name + "…"); await pool.query(sql); console.log("[db] " + name + " ok " + (Date.now() - t0) + " мс"); };
 // Первый владелец без командной строки: задайте OWNER_EMAIL, зарегистрируйтесь с этим email, и аккаунт станет владельцем.
 // Работает только пока в базе нет ни одного владельца (после выдачи переменную лучше удалить).
-const grantOwner = async email => {
+// владельцем становится только аккаунт с подтверждённой почтой (вход через Google). Обычная регистрация по паролю не подтверждает почту, поэтому без OWNER_ALLOW_PASSWORD=on владельца она не назначает
+const grantOwner = async (email, verified = false) => {
   const o = String(process.env["OWNER_EMAIL"] || "").trim().toLowerCase(); if (!o || o !== String(email || "").trim().toLowerCase()) return false;
-  const r = await pool.query("update users set role='owner' where email=$1 and not exists(select 1 from users where role='owner') returning id", [o]); return r.rowCount > 0;
+  const r = await pool.query("update users set role='owner' where email=$1 and ($2 or email_verified) and not exists(select 1 from users where role='owner') returning id", [o, verified || process.env["OWNER_ALLOW_PASSWORD"] === "on"]); return r.rowCount > 0;
 };
 const runSchema = async () => {
   globalThis.__boot = "подключение к базе данных"; console.log("[db] подключение…"); await pool.query("select 1"); console.log("[db] подключено");
@@ -66,6 +68,9 @@ await step("schema_v35.sql", SCHEMA["schema_v35.sql"]);
 await step("schema_v36.sql", SCHEMA["schema_v36.sql"]);
 await step("schema_v37.sql", SCHEMA["schema_v37.sql"]);
 await step("schema_v38.sql", SCHEMA["schema_v38.sql"]);
+	// защита аккаунтов: уже существующие считаются подтверждёнными, новые (по паролю) нет; уникальность ников и почт без учёта регистра
+	await pool.query("alter table users add column if not exists email_verified boolean not null default true"); await pool.query("alter table users alter column email_verified set default false");
+	for (const ix of ["create unique index if not exists users_username_lc on users(lower(username))", "create unique index if not exists users_email_lc on users(lower(email))"]) { try { await pool.query(ix); } catch (e) { console.warn("[db] индекс не создан (есть дубли без учёта регистра):", e.message); } }
 };
 try { await runSchema(); if (await grantOwner(process.env["OWNER_EMAIL"])) console.log("[owner] роль owner выдана:", process.env["OWNER_EMAIL"]); globalThis.__boot = "запуск сервера"; }
 catch (e) {
@@ -75,6 +80,7 @@ catch (e) {
 
 const app = express(); app.set("trust proxy", 1); app.use(shieldEarly()); app.use(shieldGate());
 app.use(helmet({ contentSecurityPolicy: { directives: { defaultSrc: ["'self'"], styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com", "https://accounts.google.com"], fontSrc: ["'self'", "data:", "https://fonts.gstatic.com"], mediaSrc: ["'self'", "blob:", "data:", "https://*.supabase.co"], scriptSrc: ["'self'", "'unsafe-inline'", "https://challenges.cloudflare.com", "https://accounts.google.com"], scriptSrcAttr: ["'unsafe-inline'"], imgSrc: ["'self'", "data:", "blob:", "https://*.supabase.co"], connectSrc: ["'self'", "https://challenges.cloudflare.com", "https://api.mymemory.translated.net", "https://accounts.google.com"], frameSrc: ["https://challenges.cloudflare.com", "https://accounts.google.com"], objectSrc: ["'none'"], baseUri: ["'self'"], frameAncestors: ["'self'"] } } }));
+app.use((_q, res, next) => { res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()"); res.setHeader("X-Permitted-Cross-Domain-Policies", "none"); next(); });
 app.use(express.json({ limit: "50kb", verify: (_req, _res, buf) => { if (buf.includes(0) || /\\u0000/i.test(buf.toString("latin1"))) throw Object.assign(new Error("invalid input"), { status: 400 }); } })); app.use(cookieParser()); app.use((req, res, next) => hooks.csrf ? hooks.csrf(req, res, next) : next());
 // ---- реальное время для всех: после любого успешного изменения данных все открытые страницы получают сигнал «обновись»
 const liveC = new Set(), liveT = new Map();
@@ -92,9 +98,9 @@ app.use("/api", (req, res, next) => {
   }); next();
 });
 const APP_VERSION = "v78";
-app.get("/api/version", (_q, r) => { const h = f => { try { return crypto.createHash("sha1").update(fs.readFileSync(new URL(f, import.meta.url))).digest("hex").slice(0, 8); } catch { return null; } }; r.json({ version: APP_VERSION, files: { routes2: h("./routes2.js"), routes10: h("./routes10.js"), app: h("./app.js") } }); });
+app.get("/api/version", async (_q, r) => { try { const [x] = _q.user ? await q("select role from users where id=$1", [_q.user.id]) : []; if (!["moderator", "admin", "owner"].includes(x?.role)) return r.json({ ok: true }); } catch { return r.json({ ok: true }); } const h = f => { try { return crypto.createHash("sha1").update(fs.readFileSync(new URL(f, import.meta.url))).digest("hex").slice(0, 8); } catch { return null; } }; r.json({ version: APP_VERSION, files: { routes2: h("./routes2.js"), routes10: h("./routes10.js"), app: h("./app.js") } }); });
 const dbFp = async () => { const [d] = await q("select md5(current_database()||pg_postmaster_start_time()::text) f, now() n"); return { db: d.f.slice(0, 6), db_time: d.n }; };
-app.get("/api/diag", async (_q, r) => { try { r.json({ version: APP_VERSION, host: _q.headers["x-forwarded-host"] || _q.headers.host, server_time: new Date().toISOString(), ...(await dbFp()) }); } catch (e) { r.status(500).json({ error: "db" }); } });
+app.get("/api/diag", async (_q, r) => { try { const [x] = _q.user ? await q("select role from users where id=$1", [_q.user.id]) : []; if (!["admin", "owner"].includes(x?.role)) return r.json({ ok: true }); r.json({ version: APP_VERSION, host: _q.headers["x-forwarded-host"] || _q.headers.host, server_time: new Date().toISOString(), ...(await dbFp()) }); } catch (e) { r.status(500).json({ error: "db" }); } });
 app.get("/health", (_, r) => r.send("ok"));
 const wrap = f => (req, res, next) => Promise.resolve(f(req, res, next)).catch(next);
 const fpSeen = new Map();
@@ -102,7 +108,7 @@ const fpSeen = new Map();
 const activeAt = new Map(), ONLINE_MS = 75000;
 setInterval(() => { const lim = Date.now() - 10 * 60e3; for (const [k, t] of activeAt) if (t < lim) activeAt.delete(k); }, 5 * 60e3).unref?.();
 app.use(async (req, _r, next) => {
-  try { req.user = jwt.verify(req.cookies.t, JWT_SECRET); } catch {}
+  try { req.user = jwt.verify(req.cookies.t, JWT_SECRET, { algorithms: ["HS256"] }); } catch {}
   if (req.user && hooks.tokVer) { try { if ((req.user.v || 0) !== await hooks.tokVer(req.user.id)) req.user = null; } catch { } } // сессия отозвана (смена пароля, «выйти везде»)
   if (req.user && req.method !== "GET" && req.method !== "HEAD" && req.method !== "OPTIONS" && req.path !== "/api/presence/off") activeAt.set(req.user.id, Date.now());
   // отпечатки для защиты дуэлей от накрутки: храним только хэши сети и устройства
@@ -116,6 +122,8 @@ app.use(shieldRules());
 const need = (req, res, next) => req.user ? next() : res.status(401).json({ error: "auth required" });
 const admin = wrap(async (req, res, next) => { const [u] = await q("select role from users where id=$1", [req.user.id]); ["admin", "owner"].includes(u?.role) ? next() : res.status(403).json({ error: "forbidden" }); });
 const setCookie = (res, id, v = 0) => res.cookie("t", jwt.sign({ id, v }, JWT_SECRET, { expiresIn: "7d" }), { httpOnly: true, sameSite: "lax", secure: prod, maxAge: 7 * 864e5 });
+const DUMMY_HASH = await bcrypt.hash("donutpay-dummy-password", 10);
+const RESERVED = /^(admin|administrator|owner|root|support|moderator|mod|staff|system|donutpay|quest[-_.]?pay|help|bot|null|undefined|security|team|official|service)$/i;
 const lim = rateLimit({ windowMs: 15 * 60e3, limit: 30 });
 const U = "id,public_id,username,email,role,is_seller,avatar_url,bio,seller_verified,avatar_media,cover_media,theme";
 const hooks = {}, B = makeBadges(q); hooks.live = live; hooks.dbFp = dbFp; hooks.setCookie = setCookie;
@@ -140,10 +148,12 @@ app.post("/api/auth/register", lim, antibot({ strictMail: true }), wrap(async (r
   if (!/^\S+@\S+\.\S+$/.test(email || "")) throw E(400, "bad email");
   if (!/^[\w.-]{3,24}$/.test(username || "")) throw E(400, "bad username");
   if ((password || "").length < 8) throw E(400, "weak password");
+  if (RESERVED.test(username)) throw E(400, "Это имя зарезервировано");
+  if ((await q("select 1 from users where lower(username)=lower($1) or lower(email)=lower($2)", [username, email]))[0]) throw E(409, "email or username taken");
   hooks.weakPw?.(password, username, email);
   hooks.panicGate?.("register"); hooks.emuCheck?.(req, "register", null);
   await hooks.deviceGate?.(req);
-  try { const [u] = await q(`insert into users(email,username,password_hash) values($1,$2,$3) returning ${U}`, [email.toLowerCase(), username, await bcrypt.hash(password, 10)]); if (await grantOwner(email)) u.role = "owner"; try { await hooks.syncAdminTg?.(); const [rr] = await q("select role from users where id=$1", [u.id]); if (rr) u.role = rr.role; } catch { } await hooks.deviceBind?.(req, u.id); setCookie(res, u.id); res.json(u); }
+  try { const [u] = await q(`insert into users(email,username,password_hash) values($1,$2,$3) returning ${U}`, [email.toLowerCase(), username, await bcrypt.hash(password, 10)]); if (await grantOwner(email, false)) u.role = "owner"; await hooks.deviceBind?.(req, u.id); setCookie(res, u.id); res.json(u); }
   catch (e) { if (e.code === "23505") throw E(409, "email or username taken"); throw e; }
 }));
 // 2FA: проверка кода приложения (с защитой от повторного использования) или резервного кода; не больше 5 ошибок за 15 минут на аккаунт
@@ -167,7 +177,7 @@ const twofaCheck = async (uid, code) => {
 app.post("/api/auth/login", lim, wrap(async (req, res) => {
   const { email, password, code } = req.body || {};
   const [u] = await q("select * from users where email=$1", [String(email || "").toLowerCase()]);
-  if (!u || !(await bcrypt.compare(String(password || ""), u.password_hash))) throw E(401, "wrong email or password");
+  if (!(await bcrypt.compare(String(password || ""), u?.password_hash || DUMMY_HASH)) || !u) throw E(401, "wrong email or password"); // сравнение выполняется всегда: по времени ответа нельзя узнать, есть ли такая почта
   hooks.emuCheck?.(req, "login", u.role);
   if (u.totp_enabled) {
     if (!code) return res.json({ need_2fa: true });
@@ -186,16 +196,18 @@ app.post("/api/auth/google", lim, wrap(async (req, res) => {
   let [u] = await q("select * from users where email=$1", [email]);
   if (u?.totp_enabled) throw E(403, "У этого аккаунта включена двухфакторная защита. Войдите по email и паролю");
   if (u) hooks.emuCheck?.(req, "login", u.role);
+  // аккаунт создан по паролю и почта не подтверждалась: возможно, его занял посторонний заранее. Старый пароль и все сессии сбрасываются, дальше вход только через Google или сброс пароля
+  if (u && !u.email_verified) { [u] = await q("update users set password_hash=$2,token_ver=coalesce(token_ver,0)+1,email_verified=true,totp_enabled=false,totp_secret=null where id=$1 returning *", [u.id, await bcrypt.hash(crypto.randomBytes(24).toString("hex"), 10)]); }
   if (!u) {
     hooks.panicGate?.("register"); hooks.emuCheck?.(req, "register", null);
     await hooks.deviceGate?.(req);
     const base = (email.split("@")[0].replace(/[^\w.-]/g, "").slice(0, 18) || "user").padEnd(3, "0");
     for (let i = 0; i < 8 && !u; i++) {
       const name = i === 0 ? base : base + Math.floor(1000 + Math.random() * 9000);
-      try { [u] = await q("insert into users(email,username,password_hash) values($1,$2,$3) returning *", [email, name, await bcrypt.hash(crypto.randomBytes(24).toString("hex"), 10)]); } catch (e) { if (e.code !== "23505") throw e; }
+      try { [u] = await q("insert into users(email,username,password_hash,email_verified) values($1,$2,$3,true) returning *", [email, name, await bcrypt.hash(crypto.randomBytes(24).toString("hex"), 10)]); } catch (e) { if (e.code !== "23505") throw e; }
     }
     if (!u) throw E(409, "Не удалось подобрать имя пользователя, попробуйте ещё раз");
-    if (await grantOwner(email)) u.role = "owner"; try { await hooks.syncAdminTg?.(); } catch { }
+    if (await grantOwner(email, true)) u.role = "owner";
     await hooks.deviceBind?.(req, u.id);
   }
   setCookie(res, u.id, u.token_ver || 0); await hooks.loginNotice?.(req, u); const { password_hash, totp_secret, totp_backup, totp_enabled, totp_last_step, token_ver, ...pub } = u; res.json(pub);
@@ -203,8 +215,11 @@ app.post("/api/auth/google", lim, wrap(async (req, res) => {
 app.post("/api/auth/logout", (req, res) => { if (req.user) { subs.get(req.user.id)?.forEach(r => r.end()); subs.delete(req.user.id); lastSeen.delete(req.user.id); activeAt.delete(req.user.id); } res.setHeader("Cache-Control", "no-store"); res.cookie("t", "", { httpOnly: true, sameSite: "lax", secure: prod, path: "/", maxAge: 0, expires: new Date(0) }); res.clearCookie("t", { path: "/" }).json({ ok: true }); });
 app.get("/api/me", need, wrap(async (req, res) => { const [u] = await q(`select ${U},show_badges,blocked_until,block_reason,block_hours from users where id=$1`, [req.user.id]); u ? res.json(u) : res.status(401).json({ error: "auth required" }); }));
 app.patch("/api/me", need, wrap(async (req, res) => {
-  const b = req.body || [];
+  const b = req.body || {};
   if (b.is_seller === true) { const [c] = await q("select 1 from seller_codes where user_id=$1 and revoked_at is null", [req.user.id]); if (!c) throw E(403, "sign seller code first"); }
+  if (b.username != null) { if (!/^[A-Za-z0-9_.-]{3,24}$/.test(String(b.username))) throw E(400, "bad username"); if (RESERVED.test(b.username)) throw E(400, "Это имя зарезервировано"); const [t] = await q("select id from users where lower(username)=lower($1) and id<>$2", [b.username, req.user.id]); if (t) throw E(409, "email or username taken"); }
+  if (b.bio != null && String(b.bio).length > 300) throw E(400, "bio max 300");
+  if (b.avatar_url != null && b.avatar_url !== "" && !/^https:\/\/[^\s"'<>]{4,280}$/.test(String(b.avatar_url))) throw E(400, "bad avatar url");
   const [u] = await q(`update users set username=coalesce($2,username),avatar_url=coalesce($3,avatar_url),bio=coalesce($4,bio),is_seller=coalesce($5,is_seller) where id=$1 returning ${U}`,
     [req.user.id, b.username ?? null, b.avatar_url ?? null, b.bio ?? null, typeof b.is_seller === "boolean" ? b.is_seller : null]);
   res.json(u);
@@ -251,7 +266,7 @@ const listingsQuery = async (req) => {
   if (+req.query.rating > 0) add("coalesce(r.avg,0)>=?", +req.query.rating);
   const ord = { cheap: "l.price_cents asc", expensive: "l.price_cents desc", rating: "coalesce(r.avg,0) desc", new: "l.created_at desc" }[sort] || "l.created_at desc";
   const boost = (!sort || sort === "new") ? "exists(select 1 from duel_boosts db where db.user_id=l.seller_id and db.until>now()) desc, " : "";
-  { const rows = await q(`select ${LCOLS} ${LFROM} where ${w.join(" and ")} order by ${boost}${ord} limit 50 offset ${Math.max(0, +offset || 0)}`, p); const bm = await B.badgesFor(rows.map(r => r.seller_id)); return rows.map(r => ({ ...r, online: online(r.seller_id), badges: bm[r.seller_id] || [] })); }
+  { const rows = await q(`select ${LCOLS} ${LFROM} where ${w.join(" and ")} order by ${boost}${ord} limit 50 offset ${Math.min(100000, Math.max(0, Math.floor(+offset) || 0))}`, p); const bm = await B.badgesFor(rows.map(r => r.seller_id)); return rows.map(r => ({ ...r, online: online(r.seller_id), badges: bm[r.seller_id] || [] })); }
 };
 app.get("/api/listings/:id", wrap(async (req, res) => {
   const [l] = await q(`select ${LCOLS},l.details,l.deactivate_on_sale,l.attrs,l.image_media,l.seller_id,l.status,case when l.seller_id=$2 then l.after_msg end after_msg,case when l.seller_id=$2 then l.auto_items end auto_items ${LFROM} where l.id=$1 and (l.status='active' or l.seller_id=$2 or exists(select 1 from users x where x.id=$2 and x.role in ('moderator','admin','owner')))`, [req.params.id, req.user?.id || null]);
@@ -390,7 +405,7 @@ app.post("/api/reports", need, wrap(async (req, res) => {
 
 // ---- admin (роль проверяется в БД на каждый запрос)
 app.get("/api/admin/listings", need, admin, wrap(async (req, res) => res.json(await q(`select ${LCOLS},l.status ${LFROM} where l.status=$1 order by l.created_at`, [req.query.status || "pending"]))));
-app.post("/api/admin/listings/:id/status", need, admin, wrap(async (req, res) => { if (!["active", "rejected", "archived"].includes(req.body?.status)) throw E(400, "bad status"); await q("update listings set status=$2 where id=$1", [req.params.id, req.body.status]); res.json({ ok: true }); }));
+app.post("/api/admin/listings/:id/status", need, admin, wrap(async (req, res) => { if (!["active", "rejected", "archived"].includes(req.body?.status)) throw E(400, "bad status"); await q("update listings set status=$2,mod_reason=case when $2='active' then null else 'Скрыто администрацией' end where id=$1", [req.params.id, req.body.status]); res.json({ ok: true }); }));
 app.get("/api/admin/disputes", need, admin, wrap(async (_, res) => res.json(await q("select * from disputes order by created_at desc limit 100"))));
 app.post("/api/admin/disputes/:id/resolve", need, admin, wrap(async (req, res) => { if (!["resolved_buyer", "resolved_seller", "closed"].includes(req.body?.status)) throw E(400, "bad status"); await q("update disputes set status=$2,resolution=$3,resolved_by=(select id from users where id=$4) where id=$1", [req.params.id, req.body.status, String(req.body.resolution || "").slice(0, 2000), req.user.id]); res.json({ ok: true }); }));
 app.get("/api/admin/reports", need, admin, wrap(async (_, res) => res.json(await q("select * from reports where status='open' order by created_at desc limit 100"))));
@@ -398,6 +413,21 @@ app.get("/api/admin/users", need, admin, wrap(async (_, res) => res.json(await q
 app.post("/api/admin/games", need, admin, wrap(async (req, res) => { const { slug, name, platform } = req.body || {}; if (!slug || !name) throw E(400, "slug and name required"); await q("insert into games(slug,name,platform) values($1,$2,$3)", [slug, name, platform || null]); res.status(201).json({ ok: true }); }));
 app.post("/api/admin/categories", need, admin, wrap(async (req, res) => { const { slug, name } = req.body || {}; if (!slug || !name) throw E(400, "slug and name required"); await q("insert into categories(slug,name) values($1,$2)", [slug, name]); res.status(201).json({ ok: true }); }));
 
+// сжатие текстовых файлов (brotli/gzip) с кэшем в памяти: страницы грузятся в 4-5 раз меньшим объёмом
+const _zc = new Map();
+const _zip = (key, buf, ae) => { const br = /\bbr\b/.test(ae), gz = /\bgzip\b/.test(ae); if (!br && !gz) return null; const k = key + (br ? ":br" : ":gz"); let c = _zc.get(k); if (!c) { c = br ? zlib.brotliCompressSync(buf, { params: { [zlib.constants.BROTLI_PARAM_QUALITY]: 5 } }) : zlib.gzipSync(buf, { level: 6 }); if (_zc.size > 300) _zc.clear(); _zc.set(k, c) } return { enc: br ? "br" : "gzip", data: c };
+};
+app.use((req, res, next) => {
+  if (req.method !== "GET" || !/\.(js|css|svg|json|webmanifest)$/.test(req.path)) return next();
+  try {
+    const p = path.join(dir, "public", path.normalize(req.path).replace(/^(\.\.[\/\\])+/, "")); if (!p.startsWith(path.join(dir, "public"))) return next();
+    const st = fs.statSync(p); if (!st.isFile() || st.size < 800) return next();
+    const buf = fs.readFileSync(p), z = _zip(p + st.mtimeMs, buf, String(req.headers["accept-encoding"] || "")); if (!z) return next();
+    const types = { js: "application/javascript; charset=utf-8", css: "text/css; charset=utf-8", svg: "image/svg+xml", json: "application/json", webmanifest: "application/manifest+json" };
+    res.setHeader("Content-Type", types[req.path.split(".").pop()]); res.setHeader("Content-Encoding", z.enc); res.setHeader("Vary", "Accept-Encoding"); res.setHeader("Content-Length", z.data.length);
+    res.setHeader("Cache-Control", req.query.v ? "public, max-age=31536000, immutable" : "no-cache, must-revalidate"); res.end(z.data);
+  } catch { next(); }
+});
 // главная отдаётся с уже встроенными настройками сайта (подвал, кнопка канала, документы), чтобы интерфейс появлялся сразу целиком
 // версия каждого файла в адресе считается по его содержимому: изменённый файл всегда скачивается заново (раньше ?v=NN кэшировался на год и правки не доходили до телефонов)
 const _vh = new Map();
@@ -406,7 +436,7 @@ const idxH = (_req, res, next) => {
   try {
     const cfg = hooks.siteConfig ? hooks.siteConfig() : {};
     const html = fs.readFileSync(path.join(dir, "public", "index.html"), "utf8").replace(/((?:src|href)="\/)([\w.-]+\.(?:js|css))\?v=\d+"/g, (_m, p, f) => `${p}${f}?v=${verOf(f)}"`).replace("<!--SC-->", "<script>window.SITE_CFG0=" + JSON.stringify(cfg).replace(/</g, "\\u003c") + "</script>");
-    res.setHeader("Cache-Control", "no-cache, must-revalidate"); res.setHeader("Content-Type", "text/html; charset=utf-8"); res.end(html);
+    res.setHeader("Cache-Control", "no-cache, must-revalidate"); res.setHeader("Content-Type", "text/html; charset=utf-8"); res.setHeader("Vary", "Accept-Encoding"); const zz = _zip("idx:" + html.length + ":" + crypto.createHash("md5").update(html).digest("hex"), Buffer.from(html), String(_req.headers["accept-encoding"] || "")); if (zz) { res.setHeader("Content-Encoding", zz.enc); res.end(zz.data) } else res.end(html);
   } catch { next(); }
 };
 app.get("/", idxH); app.get("/index.html", idxH);
@@ -418,6 +448,6 @@ app.use(async (e, req, res, _next) => {
   if (res.headersSent) { console.error("handler error after response:", e.message); return; }
   if (e.code === "22P02") e = E(400, "invalid id"); if (e.code === "23505") e = E(409, "already exists"); if (e.code === "23503") e = E(404, "not found"); if (["22003", "22001", "23502", "22007", "22008"].includes(e.code)) e = E(400, "invalid input");
   let staffDetail = null; if (!e.status && req.user) { try { const [u] = await q("select role from users where id=$1", [req.user.id]); if (["moderator", "admin", "owner"].includes(u?.role)) staffDetail = String(e.message).slice(0, 300) + (e.where ? " @" + String(e.where).slice(0, 80) : ""); } catch {} }
-  if (!e.status) console.error(e); res.status(e.status || 500).json({ error: e.status ? e.message : "server error", ...(!e.status && e.code && String(req.path).startsWith("/api/admin") ? { code: e.code, detail: String(e.message).slice(0, 200) } : {}), ...(!e.status && e.code ? { ref: e.code } : {}), ...(!e.status && process.env["DEBUG_ERRORS"] === "true" ? { detail: String(e.message).slice(0, 300) } : {}), ...(staffDetail ? { detail: staffDetail } : {}) });
+  if (!e.status) console.error(e); res.status(e.status || 500).json({ error: e.status ? e.message : "server error", ...(!e.status && e.code && String(req.path).startsWith("/api/admin") ? { code: e.code, detail: String(e.message).slice(0, 200) } : {}), ...(!e.status && process.env["DEBUG_ERRORS"] === "true" ? { detail: String(e.message).slice(0, 300) } : {}), ...(staffDetail ? { detail: staffDetail } : {}) });
 });
 export default app;

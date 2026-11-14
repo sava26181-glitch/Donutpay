@@ -92,7 +92,7 @@
   window.newT2 = act(async () => {
     const subject = ($("#ts").value || "").trim(), body = ($("#tb").value || "").trim();
     if (subject.length < 3) throw new Error("Напишите тему обращения: минимум 3 символа"); if (body.length < 10) throw new Error("Опишите проблему подробнее: минимум 10 символов");
-    const r = await api("/tickets", { method: "POST", body: { category: window._tkc || "other", orderId: $("#to").value || undefined, subject, body, attachmentId: ATT?.id } }); clearAtt(); toast("Обращение отправлено"); go("/tickets/" + r.id);
+    const r = await api("/tickets", { method: "POST", body: { category: window._tkc || "other", orderId: $("#to").value || undefined, subject, body, attachmentId: ATT?.id } }); clearAtt(); document.getElementById("md")?.remove(); toast("Обращение отправлено"); go("/tickets/" + r.id);
   });
   window.tickets = async function (id) {
     need(); const p = qp(); if (id) return ticketView(id);
