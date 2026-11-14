@@ -34,7 +34,7 @@
 <path d="M0 150C70 126 130 140 200 152S320 160 400 138V200H0Z" fill="#3A1C80" opacity=".8"/><path d="M0 170C90 154 170 168 260 172S360 162 400 166V200H0Z" fill="#241052"/><path d="M0 188C100 180 200 190 400 184V200H0Z" fill="#150A33"/>
 <g class="dp-fl"><g transform="translate(346 146) scale(.56)"><circle r="64" fill="#4C1D95"/><circle r="56" fill="url(#${id}g)"/><circle r="20" fill="#2A1060"/><path d="M-40-26A48 48 0 0 1-12-46" fill="none" stroke="#fff" stroke-opacity=".6" stroke-width="4" stroke-linecap="round"/><rect x="-12" y="30" width="14" height="5" rx="2.5" fill="#F472B6" transform="rotate(30 -5 32)"/><rect x="26" y="-30" width="14" height="5" rx="2.5" fill="#5EEAD4" transform="rotate(-40 33 -28)"/><rect x="32" y="12" width="14" height="5" rx="2.5" fill="#FDE047" transform="rotate(60 39 14)"/><rect x="-44" y="-2" width="14" height="5" rx="2.5" fill="#fff" transform="rotate(-70 -37 0)"/><rect x="2" y="-48" width="14" height="5" rx="2.5" fill="#F472B6" transform="rotate(15 9 -46)"/></g></g>${sp.map(([x,y,a,c])=>`<rect x="${x-6}" y="${y-2}" width="12" height="4" rx="2" fill="${c}" opacity=".9" transform="rotate(${a} ${x} ${y})"/>`).join("")}</svg>`;
   };
-  const promo=()=>{const p=document.querySelector("#app .promo");if(!p||p.querySelector(".dp-ps"))return;p.insertAdjacentHTML("afterbegin",homeScene())};
+  const promo=()=>{};
   const banner=()=>{
     const app=document.getElementById("app");if(!app||/^#\/m\/./.test(location.hash||""))return;
     let h=app.querySelector(".mm:not(.ch) .ml>h2")||app.querySelector(":scope>h2");const fh=app.querySelector(".fx-head");if(!h&&fh)h=fh.querySelector("h2");if(!h)return;const at=h.parentElement===fh?fh:h;

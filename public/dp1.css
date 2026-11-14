@@ -31,3 +31,11 @@ h2:has(+.dp-ban) .dp-t,.fx-head:has(+.dp-ban) .dp-t{display:none}
 /* текст баннера по центру высоты, холмы остаются под ним */
 .dp-ban{justify-content:center;padding-bottom:22px}
 .dp-ban::after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,rgba(15,7,36,.8),rgba(15,7,36,0) 62%);pointer-events:none}
+/* главная: минимализм, без картинки */
+.promo{background:radial-gradient(120% 140% at 100% 0,rgba(139,92,246,.22),transparent 60%),var(--c)!important;border-color:var(--line)!important;box-shadow:none!important}
+.promo::before{display:none}
+.promo h1,.promo p{text-shadow:none}
+.promo .pl>:not(h1){display:none!important}
+.promo{padding:22px 20px!important}
+.promo h1{font-size:clamp(24px,6.4vw,34px)!important;line-height:1.15;margin:0 0 8px}
+.promo .btn.big{margin-top:14px}
