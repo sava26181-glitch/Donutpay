@@ -41,4 +41,19 @@
   };
   new MutationObserver(thr(run)).observe(document.documentElement,{childList:true,subtree:true});run();
   addEventListener("hashchange",()=>{try{scrollTo(0,0)}catch{};setTimeout(()=>{try{scrollTo(0,0)}catch{}},120)});
+  // персонал открывает обычную ссылку на заказ: показываем карточку заказа с полным чатом
+  try{const op=window.orderPage;if(typeof op==="function")window.orderPage=async id=>{try{return await op(id)}catch(e){if(typeof isStaff==="function"&&isStaff()){setTimeout(()=>go("/admin?tab=order&id="+id),0);return""}throw e}}}catch{}
+
+  // ---------- страница «Игры»: витрина с обложками и аккуратный список
+  const ART=new Set("apex-legends brawl-stars chess clash-royale cs2 dota-2 ea-fc fortnite league-of-legends minecraft-pvp mobile-legends pubg-mobile rocket-league standoff-2 valorant".split(" "));
+  const GRAD=[["#7C3AED","#C084FC"],["#DB2777","#F472B6"],["#0D9488","#5EEAD4"],["#4F46E5","#818CF8"],["#C026D3","#E879F9"],["#2563EB","#60A5FA"]];
+  const hs=t=>{let h=0;for(const c of t)h=(h*31+c.charCodeAt(0))>>>0;return h};
+  const mono=g=>{const [a,b]=GRAD[hs(g.slug||g.name)%GRAD.length],l=gs(g.name).trim().charAt(0).toUpperCase();return `<span class="gm" style="background:linear-gradient(135deg,${a},${b})">${esc(l)}</span>`};
+  window.glist=function(){
+    const q=GQ.toLowerCase(),a=GAMES.filter(g=>gk(g.name)!=="#"&&g.name.toLowerCase().includes(q)).sort((x,y)=>gs(x.name).localeCompare(gs(y.name),"ru"));
+    if(!a.length)return empty("Игра не найдена. Проверьте запрос.");
+    const L=[...new Set(a.map(g=>gk(g.name)))],pop=q?[]:GAMES.filter(g=>ART.has(g.slug));
+    const top=pop.length?`<div class="gx-h">Популярные игры</div><div class="gx">${pop.map(g=>`<a class="gx-c" onclick="go('/catalog?game=${g.slug}')"><img src="/img/games/${g.slug}.webp" alt="" loading="lazy"><b>${esc(g.name)}</b></a>`).join("")}</div><div class="gx-h">Все игры</div>`:"";
+    return top+`<nav class="ai">${L.map(l=>`<a onclick="azGo('${l}')">${l}</a>`).join("")}</nav>`+L.map(l=>`<div class="lh" id="L-${l}">${l}</div><div class="lgrid">${a.filter(g=>gk(g.name)===l).map(g=>`<div class="lr">${ART.has(g.slug)?`<img class="gm" src="/img/games/${g.slug}.webp" alt="" loading="lazy">`:mono(g)}<div class="gt"><a class="gn" onclick="go('/catalog?game=${g.slug}')">${esc(g.name)}</a><div class="gcs">${(g.cats||[]).map(c=>`<a onclick="go('/catalog?game=${g.slug}&category=${c.slug}')">${esc(c.label)}</a>`).join("")}</div></div></div>`).join("")}</div>`).join("");
+  };
 })();

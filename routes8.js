@@ -89,9 +89,9 @@ export default function routes8(app, { q, pool, tx, E, wrap, need, hooks, pushUs
       q("select e.status,e.created_at,u.username from order_events e left join users u on u.id=e.actor_id where e.order_id=$1 order by e.id", [o.id]),
       q("select id,status,reason,created_at from disputes where order_id=$1 order by created_at", [o.id]),
       q("select amount::float amount,status from holds where order_id=$1", [o.id]),
-      q(`select m.id,m.body,m.kind,m.created_at,u.username from conversations c join messages m on m.conversation_id=c.id left join users u on u.id=m.sender_id
-         where least(c.buyer_id,c.seller_id)=least($1::uuid,$2::uuid) and greatest(c.buyer_id,c.seller_id)=greatest($1::uuid,$2::uuid) order by m.created_at desc limit 100`, [o.buyer_id, o.seller_id])]);
-    res.json({ ...o, events, disputes, hold: hold || null, messages: messages.reverse() });
+      q(`select m.id,m.body,m.kind,m.created_at,m.sender_id,u.username,(select json_agg(json_build_object('id',a.id,'name',a.name,'mime',a.mime,'size',a.size)) from attachments a where a.message_id=m.id) atts from conversations c join messages m on m.conversation_id=c.id left join users u on u.id=m.sender_id
+         where least(c.buyer_id,c.seller_id)=least($1::uuid,$2::uuid) and greatest(c.buyer_id,c.seller_id)=greatest($1::uuid,$2::uuid) order by m.created_at asc limit 5000`, [o.buyer_id, o.seller_id])]);
+    res.json({ ...o, events, disputes, hold: hold || null, messages });
   }));
 
   // ---- счётчики «сколько проверить» для персонала

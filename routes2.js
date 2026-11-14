@@ -318,7 +318,12 @@ export default function routes2(app, { q, pool, tx, E, wrap, need, online, B, ho
   // ---- поддержка
   const TC = ["order", "payment", "account", "listing", "other"];
   app.post("/api/tickets", need, wrap(async (req, res) => {
-    const { category, subject, body, orderId, attachmentId } = req.body || {}; if (!TC.includes(category) || String(subject || "").length < 3 || String(body || "").length < 5) throw E(400, "invalid input");
+    let { category, subject, body, orderId, orderNumber, attachmentId } = req.body || {}; if (!TC.includes(category) || String(subject || "").length < 3 || String(body || "").length < 5) throw E(400, "invalid input");
+    if (orderNumber !== undefined && orderNumber !== null && String(orderNumber).trim() !== "") {
+      const n = String(orderNumber).replace(/\D/g, ""); if (!n || n.length > 12) throw E(400, "Номер заказа указан неверно");
+      const [o] = await q("select id from orders where number=$1 and $2 in (buyer_id,seller_id)", [n, req.user.id]); if (!o) throw E(400, "Заказ с таким номером не найден среди ваших заказов");
+      orderId = o.id;
+    } else orderId = undefined;
     if (orderId) { const [o] = await q("select 1 from orders where id=$1 and $2 in (buyer_id,seller_id)", [orderId, req.user.id]); if (!o) throw E(400, "bad order"); }
     res.status(201).json(await tx(async c => { const { rows: [t] } = await c.query("insert into tickets(user_id,order_id,category,subject) values($1,$2,$3,$4) returning id", [req.user.id, orderId || null, category, String(subject).slice(0, 120)]); const { rows: [tm] } = await c.query("insert into ticket_messages(ticket_id,author_id,body) values($1,$2,$3) returning id", [t.id, req.user.id, String(body).slice(0, 3000)]); await linkAtt(attachmentId, req.user.id, "ticket", "ticket_message_id", tm.id, null, c); notifyStaff("Новое обращение в поддержку: " + String(subject).slice(0, 80)); return t; }));
   }));

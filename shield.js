@@ -128,7 +128,7 @@ function banWave() { const now = Date.now(); G.banTs = G.banTs.filter(t => now -
 function subnet(ip) { const v4 = /(\d+)\.(\d+)\.(\d+)\.\d+$/.exec(ip); if (v4) return v4[1] + "." + v4[2] + "." + v4[3]; return ip.split(":").slice(0, 3).join(":"); }
 function tick() { const s = Math.floor(Date.now() / 1000); if (s !== G.sec) { const gap = Math.min(10, s - G.sec); for (let i = 1; i <= gap; i++) G.rps[(G.sec + i) % 10] = 0; G.sec = s; } G.rps[s % 10]++; }
 const avgRps = () => G.rps.reduce((a, b) => a + b, 0) / 10;
-setInterval(() => { const t = performance.now(); setImmediate(() => { G.lag = performance.now() - t; G.lagBad = G.lag > 250 ? G.lagBad + 1 : 0; if (G.lagBad >= 4) trip("сервер перегружен"); }); }, 500).unref();
+setInterval(() => { const t = performance.now(); setImmediate(() => { G.lag = performance.now() - t; G.lagBad = G.lag > 600 ? G.lagBad + 1 : 0; if (G.lagBad >= 12) trip("сервер перегружен"); }); }, 500).unref();
 setInterval(() => { const now = Date.now(); for (const [k, v] of G.used) if (v < now) G.used.delete(k); for (const [k, v] of G.cid) if (v.t < now) G.cid.delete(k); if (G.revoked.size > 50000) G.revoked.clear(); }, 60000).unref();
 function busy(res, msg) { res.setHeader("Retry-After", "3"); res.setHeader("Cache-Control", "no-store"); return res.status(503).json({ error: msg || "server busy" }); }
 function cookieOf(req, name) { const m = new RegExp("(?:^|;\\s*)" + name + "=([^;]+)").exec(String(req.headers.cookie || "")); return m ? decodeURIComponent(m[1]) : ""; }
@@ -166,7 +166,7 @@ export function shieldGate() {
     if (isLoad(req)) return next();
     const p = req.path; if (p === "/health") return next();
     if (p === "/__dp/pass") return passCheck(req, res);
-    if (!/\.(js|css|webp|png|jpe?g|svg|ico|woff2?|gif|mp4|txt|xml)$/i.test(p)) { tick(); const lim = numE(env().ATTACK_RPS, 150); if (avgRps() > lim) trip("всплеск запросов: " + Math.round(avgRps()) + " в секунду"); } // считаем страницы и API, не картинки
+    if (!/\.(js|css|webp|png|jpe?g|svg|ico|woff2?|gif|mp4|txt|xml)$/i.test(p)) { tick(); const lim = numE(env().ATTACK_RPS, 400); if (avgRps() > lim) trip("всплеск запросов: " + Math.round(avgRps()) + " в секунду"); } // считаем страницы и API, не картинки
     const ip = String(req.ip || "?"), hook = isHook(p), sse = p === "/api/stream" || p === "/api/live";
     if (sse) {
       const n = G.sse.get(ip) || 0; if (n >= numE(env().SHIELD_IP_STREAMS, 8)) return busy(res, "too many parallel requests");
@@ -176,7 +176,7 @@ export function shieldGate() {
       const n = G.perIp.get(ip) || 0; if (!hook && n >= numE(env().SHIELD_IP_INFLIGHT, 60)) return busy(res, "too many parallel requests");
       G.inflight++; G.perIp.set(ip, n + 1); let d = false; const fin = () => { if (d) return; d = true; G.inflight--; const m = (G.perIp.get(ip) || 1) - 1; if (m <= 0) G.perIp.delete(ip); else G.perIp.set(ip, m); }; res.on("finish", fin); res.on("close", fin);
     }
-    if (G.lagBad >= 4 && !hook && p.startsWith("/api/") && req.method !== "GET") return busy(res);
+    if (G.lagBad >= 12 && !hook && p.startsWith("/api/") && req.method !== "GET") return busy(res);
     if (hook || !attackOn() || clearance(req)) return next();
     if (req.method === "GET" && (p === "/" || /text\/html/.test(String(req.headers.accept || "")))) return challenge(req, res);
     res.setHeader("Cache-Control", "no-store"); return res.status(503).json({ error: "browser check required", challenge: true });
