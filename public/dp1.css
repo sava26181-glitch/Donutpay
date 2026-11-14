@@ -22,3 +22,12 @@ body.inchat .mm.ch .mc2 .cmp3{transition:padding .2s ease}
 @keyframes dpfl{50%{transform:translateY(-4px)}}
 @media(prefers-reduced-motion:reduce){.dp-fl{animation:none}}
 h2:has(+.dp-ban) .dp-t,.fx-head:has(+.dp-ban) .dp-t{display:none}
+/* главная: герой на сцене */
+.promo{position:relative;overflow:hidden;isolation:isolate;border-color:color-mix(in srgb,var(--p) 45%,transparent)!important;background:#0F0724!important;box-shadow:0 14px 40px -16px rgba(139,92,246,.6)}
+.promo>.dp-ps{position:absolute;inset:0;width:100%;height:100%;z-index:-1}
+.promo::before{content:"";position:absolute;inset:0;z-index:-1;background:linear-gradient(90deg,rgba(15,7,36,.92) 0%,rgba(15,7,36,.55) 55%,transparent 85%)}
+.promo h1,.promo p{text-shadow:0 2px 12px rgba(15,7,36,.7)}
+@media(max-width:760px){.promo::before{background:linear-gradient(90deg,rgba(15,7,36,.9) 0%,rgba(15,7,36,.5) 70%,rgba(15,7,36,.2) 100%)}}
+/* текст баннера по центру высоты, холмы остаются под ним */
+.dp-ban{justify-content:center;padding-bottom:22px}
+.dp-ban::after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,rgba(15,7,36,.8),rgba(15,7,36,0) 62%);pointer-events:none}
