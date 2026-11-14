@@ -38,6 +38,13 @@ export default function routesCovers(app, { q, wrap }) {
   const slot = () => run < 3 ? (run++, Promise.resolve()) : new Promise(r => wait.push(r));
   const free = () => { run--; const n = wait.shift(); if (n) { run++; n() } };
   const find = (slug, name) => { if (busy.has(slug)) return busy.get(slug); const p = (async () => { await slot(); try { for (const s of src) { try { const b = await s(name); if (b) return b } catch { } } return null } finally { free() } })().then(async b => { await q("insert into game_covers(slug,ext,data,miss,at) values($1,'img',$2,$3,now()) on conflict(slug) do update set data=$2,miss=$3,at=now()", [slug, b, !b]).catch(() => { }); return b }).finally(() => busy.delete(slug)); busy.set(slug, p); return p };
+  // диагностика: открой /api/cover-debug/<slug> в браузере, покажет что ответил каждый источник
+  app.get("/api/cover-debug/:slug", wrap(async (req, res) => {
+    const slug = String(req.params.slug || ""); if (!/^[a-z0-9-]{1,80}$/.test(slug)) return res.status(404).end();
+    const [g] = await q("select name from games where slug=$1", [slug]); if (!g) return res.status(404).json({ error: "нет такой игры" });
+    const out = []; for (let i = 0; i < src.length; i++) { const t = Date.now(); try { const b = await src[i](g.name); out.push({ source: i, found: !!b, bytes: b ? b.length : 0, ms: Date.now() - t }) } catch (e) { out.push({ source: i, error: String(e.message || e), ms: Date.now() - t }) } }
+    res.json({ name: g.name, sources: out });
+  }));
   app.get("/api/cover/:slug", wrap(async (req, res) => {
     const slug = String(req.params.slug || ""); if (!/^[a-z0-9-]{1,80}$/.test(slug)) return res.status(404).end();
     res.set("Cache-Control", "public, max-age=86400");

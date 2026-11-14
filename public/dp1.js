@@ -74,5 +74,36 @@
     return "data:image/svg+xml;charset=utf-8,"+encodeURIComponent(svg);
   };
   window.gameCover=cover;
-  document.addEventListener("error",e=>{const i=e.target;if(!i||i.tagName!=="IMG"||i.dataset.cv)return;const m=/\/(?:img\/games|api\/cover)\/([^/?#]+?)(?:\.(?:webp|png|jpe?g))?(?:[?#]|$)/.exec(i.getAttribute("src")||"");if(!m)return;i.dataset.cv=1;const g=(window.GAMES||[]).find(x=>x.slug===m[1]);i.src=cover(m[1],g?g.name:m[1].replace(/-/g," "))},true);
+
+  /* запасной поиск обложек прямо из браузера (iTunes, Википедия): работает, даже если сервер не достаёт до магазинов */
+  (function(){
+    var TR={а:"a",б:"b",в:"v",г:"g",д:"d",е:"e",ё:"e",ж:"zh",з:"z",и:"i",й:"i",к:"k",л:"l",м:"m",н:"n",о:"o",п:"p",р:"r",с:"s",т:"t",у:"u",ф:"f",х:"h",ц:"c",ч:"ch",ш:"sh",щ:"sh",ъ:"",ы:"y",ь:"",э:"e",ю:"u",я:"a"};
+    var norm=function(t){return String(t||"").toLowerCase().replace(/[^a-zа-яё0-9]+/g," ").trim()};
+    var skel=function(t){return norm(t).replace(/[а-яё]/g,function(c){return TR[c]||""}).replace(/(.)\1+/g,"$1").replace(/y/g,"i").replace(/\s+/g," ")};
+    var toks=function(t){return skel(t).split(" ").filter(function(w){return w.length>1})};
+    var same=function(a,b){var x=skel(a),y=skel(b);if(!x||!y)return false;var na=(String(a).match(/\d+/g)||[]).join(),nb=(String(b).match(/\d+/g)||[]).join();if(na&&nb&&na!==nb)return false;
+      if(x===y||x.indexOf(y+" ")===0||y.indexOf(x+" ")===0||x.replace(/ /g,"")===y.replace(/ /g,""))return true;
+      var A=toks(a),B=toks(b);if(!A.length||!B.length)return false;return A.filter(function(w){return B.indexOf(w)>-1}).length/Math.max(A.length,B.length)>=.75};
+    var K="dpcv2",M={};try{M=JSON.parse(localStorage.getItem(K)||"{}")}catch(e){}
+    var save=function(){try{localStorage.setItem(K,JSON.stringify(M))}catch(e){}};
+    var jsonp=function(u){return new Promise(function(ok,no){var n="dpj"+Math.random().toString(36).slice(2),s=document.createElement("script"),t=setTimeout(function(){end();no()},8000);
+      function end(){clearTimeout(t);delete window[n];s.remove()}window[n]=function(d){end();ok(d)};s.onerror=function(){end();no()};s.src=u+"&callback="+n;document.head.appendChild(s)})};
+    var J=function(u){return fetch(u).then(function(r){return r.json()})};
+    var srcs=[
+      function(n){return jsonp("https://itunes.apple.com/search?entity=software&limit=10&country=ru&term="+encodeURIComponent(n)).then(function(r){var it=(r.results||[]).find(function(x){return same(String(x.trackName).split(/[:\-–—]/)[0],n)||same(x.trackName,n)||same(x.sellerName,n)});return it?String(it.artworkUrl512||it.artworkUrl100).replace(/\d+x\d+bb/,"512x512bb"):null})},
+      function(n){return jsonp("https://itunes.apple.com/search?entity=software&limit=10&country=us&term="+encodeURIComponent(n)).then(function(r){var it=(r.results||[]).find(function(x){return same(String(x.trackName).split(/[:\-–—]/)[0],n)||same(x.trackName,n)});return it?String(it.artworkUrl512||it.artworkUrl100).replace(/\d+x\d+bb/,"512x512bb"):null})},
+      function(n){return J("https://ru.wikipedia.org/w/api.php?action=query&format=json&generator=search&gsrlimit=6&prop=pageimages&piprop=thumbnail&pithumbsize=600&origin=*&gsrsearch="+encodeURIComponent(n)).then(function(r){var it=Object.values((r.query||{}).pages||{}).find(function(x){return x.thumbnail&&same(String(x.title).replace(/\s*\(.*\)$/,""),n)});return it?it.thumbnail.source:null})},
+      function(n){return J("https://en.wikipedia.org/w/api.php?action=query&format=json&generator=search&gsrlimit=6&prop=pageimages&piprop=thumbnail&pithumbsize=600&origin=*&gsrsearch="+encodeURIComponent(n)).then(function(r){var it=Object.values((r.query||{}).pages||{}).find(function(x){return x.thumbnail&&same(String(x.title).replace(/\s*\(.*\)$/,""),n)});return it?it.thumbnail.source:null})}
+    ];
+    var find=async function(n){for(var i=0;i<srcs.length;i++){try{var u=await srcs[i](n);if(u)return u}catch(e){}}return null};
+    var q=[],run=0;
+    var pump=function(){while(run<3&&q.length){var j=q.shift();run++;(function(j){find(j.n).then(function(u){M[j.slug]=u||0;save();if(u)j.imgs.forEach(function(i){i.src=u})}).catch(function(){}).then(function(){run--;pump()})})(j)}};
+    var pend={};
+    window.dpCoverLookup=function(img,slug,name){
+      if(M[slug]){img.src=M[slug];return}
+      if(M[slug]===0)return;
+      if(pend[slug]){pend[slug].imgs.push(img);return}
+      pend[slug]={imgs:[img],n:name};q.push({slug:slug,n:name,imgs:pend[slug].imgs});pump()};
+  })();
+  document.addEventListener("error",e=>{const i=e.target;if(!i||i.tagName!=="IMG"||i.dataset.cv)return;const m=/\/(?:img\/games|api\/cover)\/([^/?#]+?)(?:\.(?:webp|png|jpe?g))?(?:[?#]|$)/.exec(i.getAttribute("src")||"");if(!m)return;i.dataset.cv=1;const g=(window.GAMES||[]).find(x=>x.slug===m[1]);var nm=g?g.name:m[1].replace(/-/g," ");i.src=cover(m[1],nm);if(window.dpCoverLookup)window.dpCoverLookup(i,m[1],nm)},true);
 })();
