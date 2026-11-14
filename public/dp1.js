@@ -10,19 +10,25 @@
 
   // баннер-пейзаж: сумерки, пончик-луна, холмы и посыпка
   const BAN={"Сообщения":["Ваши диалоги","Покупатели и продавцы пишут сюда"],"Финансы":["Ваш баланс","Деньги, выводы и история операций"],"Избранное":["Ваше избранное","Лоты, за ценой которых вы следите"],"Заказы":["Ваши заказы","Статус каждой покупки и продажи"],"Мои заказы":["Ваши заказы","Статус каждой покупки и продажи"]};
-  const scene=()=>{
-    const id="ds"+(n++),st=[[20,18,1.6],[58,40,1.1],[96,14,1.3],[140,34,1],[188,12,1.5],[226,30,1.1],[262,10,1.2],[364,16,1.4],[384,52,1],[170,52,.9]];
-    const sp=[[60,26,20,"#F472B6"],[150,44,-30,"#5EEAD4"],[220,22,40,"#FDE047"],[262,60,-10,"#F472B6"],[380,100,30,"#5EEAD4"]];
-    return `<svg viewBox="0 0 400 120" preserveAspectRatio="xMidYMid slice" aria-hidden="true"><defs><linearGradient id="${id}s" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#150B2B"/><stop offset=".6" stop-color="#3B1D7A"/><stop offset="1" stop-color="#7C3AED"/></linearGradient><linearGradient id="${id}g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#DDD6FE"/><stop offset="1" stop-color="#8B5CF6"/></linearGradient></defs>
-<rect width="400" height="120" fill="url(#${id}s)"/>${st.map(([x,y,r])=>`<circle cx="${x}" cy="${y}" r="${r}" fill="#fff" opacity=".8"/>`).join("")}
-<g transform="translate(318 44)"><circle r="31" fill="#4C1D95"/><circle r="27" fill="url(#${id}g)"/><circle r="10" fill="#2A1060"/><path d="M-20-12A24 24 0 0 1-6-22" fill="none" stroke="#fff" stroke-opacity=".5" stroke-width="2.4" stroke-linecap="round"/><rect x="-6" y="14" width="7" height="2.6" rx="1.3" fill="#F472B6" transform="rotate(30 -2 15)"/><rect x="12" y="-14" width="7" height="2.6" rx="1.3" fill="#5EEAD4" transform="rotate(-40 15 -13)"/><rect x="16" y="6" width="7" height="2.6" rx="1.3" fill="#FDE047" transform="rotate(60 19 7)"/></g>
-<path d="M0 92C50 74 96 80 150 90S260 98 320 82 380 78 400 84V120H0Z" fill="#2A1457"/><path d="M0 106C70 92 130 100 200 104S330 96 400 100V120H0Z" fill="#170A33"/>${sp.map(([x,y,a,c])=>`<rect x="${x-6}" y="${y-2}" width="12" height="4" rx="2" fill="${c}" opacity=".9" transform="rotate(${a} ${x} ${y})"/>`).join("")}</svg>`;
+  const MOT={
+    "Сообщения":`<g transform="translate(300 40)"><path d="M-46-24h60a12 12 0 0 1 12 12v22a12 12 0 0 1-12 12H-6l-16 14v-14h-24a12 12 0 0 1-12-12v-22a12 12 0 0 1 12-12z" fill="url(#GG)"/><circle cx="-30" cy="-1" r="3.4" fill="#4C1D95"/><circle cx="-16" cy="-1" r="3.4" fill="#4C1D95"/><circle cx="-2" cy="-1" r="3.4" fill="#4C1D95"/></g><g transform="translate(352 74) scale(.62)"><path d="M-46-24h60a12 12 0 0 1 12 12v22a12 12 0 0 1-12 12H-6l-16 14v-14h-24a12 12 0 0 1-12-12v-22a12 12 0 0 1 12-12z" fill="#F472B6" opacity=".9"/></g>`,
+    "Финансы":`<g transform="translate(318 74)"><ellipse cy="12" rx="34" ry="11" fill="#4C1D95"/><ellipse cy="6" rx="34" ry="11" fill="#6D3FD6"/><ellipse cy="-2" rx="34" ry="11" fill="#4C1D95"/><ellipse cy="-8" rx="34" ry="11" fill="url(#GG)"/><ellipse cy="-8" rx="12" ry="3.6" fill="#2A1060"/></g><g transform="translate(366 56)"><circle r="14" fill="#FDE047"/><circle r="10" fill="none" stroke="#CA8A04" stroke-width="2"/><circle r="3.4" fill="#CA8A04"/></g>`,
+    "Избранное":`<g transform="translate(318 46)"><path d="M0 34C-44 6-30-26-10-26c8 0 10 5 10 5s2-5 10-5c20 0 34 32-10 60z" fill="url(#GG)" transform="translate(0 -4)"/><path d="M-20-12c4-6 9-7 13-5" fill="none" stroke="#fff" stroke-opacity=".6" stroke-width="3" stroke-linecap="round"/></g>`,
+    "Заказы":`<g transform="translate(316 44)"><rect x="-30" y="-24" width="60" height="50" rx="10" fill="url(#GG)"/><path d="M-30-6h60" stroke="#4C1D95" stroke-width="3"/><path d="M-12 8l7 7 15-15" fill="none" stroke="#2A1060" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/></g>`};
+  MOT["Мои заказы"]=MOT["Заказы"];
+  const scene=t=>{
+    const id="ds"+(n++),st=[[20,18,1.5],[58,40,1],[96,14,1.2],[140,30,.9],[188,12,1.4],[226,30,1],[262,10,1.1],[390,14,1.2],[170,50,.8]];
+    const sp=[[60,26,20,"#F472B6"],[150,44,-30,"#5EEAD4"],[220,22,40,"#FDE047"],[262,58,-10,"#F472B6"],[392,96,30,"#5EEAD4"]];
+    return `<svg viewBox="0 0 400 120" preserveAspectRatio="xMaxYMid slice" aria-hidden="true"><defs><linearGradient id="${id}s" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0F0724"/><stop offset=".55" stop-color="#2E1568"/><stop offset="1" stop-color="#6D3FD6"/></linearGradient><linearGradient id="${id}g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#EDE9FE"/><stop offset="1" stop-color="#8B5CF6"/></linearGradient><radialGradient id="${id}h" cx=".78" cy=".35" r=".55"><stop offset="0" stop-color="#C4B5FD" stop-opacity=".55"/><stop offset="1" stop-color="#C4B5FD" stop-opacity="0"/></radialGradient><linearGradient id="${id}l" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#0F0724" stop-opacity=".85"/><stop offset=".55" stop-color="#0F0724" stop-opacity="0"/></linearGradient></defs>
+<rect width="400" height="120" fill="url(#${id}s)"/><rect width="400" height="120" fill="url(#${id}h)"/>${st.map(([x,y,r])=>`<circle cx="${x}" cy="${y}" r="${r}" fill="#fff" opacity=".75"/>`).join("")}
+<path d="M0 88C60 66 110 78 170 90S270 96 330 78 385 70 400 76V120H0Z" fill="#3A1C80" opacity=".8"/><path d="M0 98C70 84 130 94 200 100S330 90 400 94V120H0Z" fill="#241052"/><path d="M0 110C90 102 170 110 260 106S360 104 400 108V120H0Z" fill="#150A33"/>
+<g class="dp-fl">${(MOT[t]||MOT["Сообщения"]).replace(/GG/g,id+"g")}</g>${sp.map(([x,y,a,c])=>`<rect x="${x-6}" y="${y-2}" width="12" height="4" rx="2" fill="${c}" opacity=".9" transform="rotate(${a} ${x} ${y})"/>`).join("")}<rect width="400" height="120" fill="url(#${id}l)"/></svg>`;
   };
   const banner=()=>{
     const app=document.getElementById("app");if(!app||/^#\/m\/./.test(location.hash||""))return;
     let h=app.querySelector(".mm:not(.ch) .ml>h2")||app.querySelector(":scope>h2");const fh=app.querySelector(".fx-head");if(!h&&fh)h=fh.querySelector("h2");if(!h)return;const at=h.parentElement===fh?fh:h;
     const t=(h.textContent||"").trim(),c=BAN[t];if(!c||at.nextElementSibling?.classList?.contains("dp-ban"))return;
-    at.insertAdjacentHTML("afterend",`<div class="dp-ban">${scene()}<b>${c[0]}</b><span>${c[1]}</span></div>`);
+    at.insertAdjacentHTML("afterend",`<div class="dp-ban">${scene(t)}<b>${c[0]}</b><span>${c[1]}</span></div>`);
   };
   const skip=()=>{const h=location.hash||"#/";return h==="#/"||h===""||/^#\/(u|me|login|register)(\/|$)/.test(h)};
   const run=()=>{
@@ -31,7 +37,6 @@
     const app=document.getElementById("app");if(!app)return;
     const h=app.querySelector(":scope>h2");
     if(h&&!h.querySelector(".dp-t")){const s=document.createElement("span");s.className="dp-t";s.innerHTML=donut();h.prepend(s)}
-    app.querySelectorAll('.card.m[style*="text-align:center"]').forEach(c=>{if(c.querySelector(".dp-e"))return;const s=document.createElement("span");s.className="dp-e";s.innerHTML=donut();c.prepend(s)});
   };
   new MutationObserver(thr(run)).observe(document.documentElement,{childList:true,subtree:true});run();
   addEventListener("hashchange",()=>{try{scrollTo(0,0)}catch{};setTimeout(()=>{try{scrollTo(0,0)}catch{}},120)});
