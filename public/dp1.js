@@ -55,7 +55,7 @@
     if(!a.length)return empty("Игра не найдена. Проверьте запрос.");
     const L=[...new Set(a.map(g=>gk(g.name)))],pop=q?[]:GAMES.filter(g=>ART.has(g.slug));
     const top=pop.length?`<div class="gx-h">Популярные игры</div><div class="gx">${pop.map(g=>`<a class="gx-c" onclick="go('/catalog?game=${g.slug}')"><img src="/img/games/${g.slug}.${EXT[g.slug]||"webp"}" alt="" loading="lazy"><b>${esc(g.name)}</b></a>`).join("")}</div><div class="gx-h">Все игры</div>`:"";
-    return top+`<nav class="ai">${L.map(l=>`<a onclick="azGo('${l}')">${l}</a>`).join("")}</nav>`+L.map(l=>`<div class="lh" id="L-${l}">${l}</div><div class="lgrid">${a.filter(g=>gk(g.name)===l).map(g=>`<div class="lr"><img class="gm" src="${ART.has(g.slug)?`/img/games/${g.slug}.${EXT[g.slug]||"webp"}`:cover(g.slug,g.name)}" alt="" loading="lazy"><div class="gt"><a class="gn" onclick="go('/catalog?game=${g.slug}')">${esc(g.name)}</a><div class="gcs">${(g.cats||[]).map(c=>`<a onclick="go('/catalog?game=${g.slug}&category=${c.slug}')">${esc(c.label)}</a>`).join("")}</div></div></div>`).join("")}</div>`).join("");
+    return top+`<nav class="ai">${L.map(l=>`<a onclick="azGo('${l}')">${l}</a>`).join("")}</nav>`+L.map(l=>`<div class="lh" id="L-${l}">${l}</div><div class="lgrid">${a.filter(g=>gk(g.name)===l).map(g=>`<div class="lr"><img class="gm" src="${ART.has(g.slug)?`/img/games/${g.slug}.${EXT[g.slug]||"webp"}`:`/api/cover/${g.slug}`}" alt="" loading="lazy"><div class="gt"><a class="gn" onclick="go('/catalog?game=${g.slug}')">${esc(g.name)}</a><div class="gcs">${(g.cats||[]).map(c=>`<a onclick="go('/catalog?game=${g.slug}&category=${c.slug}')">${esc(c.label)}</a>`).join("")}</div></div></div>`).join("")}</div>`).join("");
   };
 
   // ---------- обложки для всех игр: если картинки нет, рисуем свою (разный узор и цвет для каждой игры)
@@ -74,5 +74,5 @@
     return "data:image/svg+xml;charset=utf-8,"+encodeURIComponent(svg);
   };
   window.gameCover=cover;
-  document.addEventListener("error",e=>{const i=e.target;if(!i||i.tagName!=="IMG"||i.dataset.cv)return;const m=/\/img\/games\/([^/?#]+?)\.(?:webp|png|jpe?g)/.exec(i.getAttribute("src")||"");if(!m)return;i.dataset.cv=1;const g=(window.GAMES||[]).find(x=>x.slug===m[1]);i.src=cover(m[1],g?g.name:m[1].replace(/-/g," "))},true);
+  document.addEventListener("error",e=>{const i=e.target;if(!i||i.tagName!=="IMG"||i.dataset.cv)return;const m=/\/(?:img\/games|api\/cover)\/([^/?#]+?)(?:\.(?:webp|png|jpe?g))?(?:[?#]|$)/.exec(i.getAttribute("src")||"");if(!m)return;i.dataset.cv=1;const g=(window.GAMES||[]).find(x=>x.slug===m[1]);i.src=cover(m[1],g?g.name:m[1].replace(/-/g," "))},true);
 })();
