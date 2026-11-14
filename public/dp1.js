@@ -46,7 +46,7 @@
 
   // ---------- страница «Игры»: витрина с обложками и аккуратный список
   const ART=new Set("apex-legends brawl-stars chess clash-royale cs2 dota-2 ea-fc fortnite league-of-legends minecraft-pvp mobile-legends pubg-mobile rocket-league standoff-2 valorant".split(" "));
-  const GRAD=[["#7C3AED","#C084FC"],["#DB2777","#F472B6"],["#0D9488","#5EEAD4"],["#4F46E5","#818CF8"],["#C026D3","#E879F9"],["#2563EB","#60A5FA"]];
+  const GRAD=[["#5B3FD0","#5B3FD0"],["#3A4A9A","#3A4A9A"],["#1F6F78","#1F6F78"],["#7A3C8C","#7A3C8C"],["#2F5FA8","#2F5FA8"],["#6B4A2F","#6B4A2F"]];
   const hs=t=>{let h=0;for(const c of t)h=(h*31+c.charCodeAt(0))>>>0;return h};
   const mono=g=>{const [a,b]=GRAD[hs(g.slug||g.name)%GRAD.length],l=gs(g.name).trim().charAt(0).toUpperCase();return `<span class="gm" style="background:linear-gradient(135deg,${a},${b})">${esc(l)}</span>`};
   window.glist=function(){
