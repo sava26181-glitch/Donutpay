@@ -54,6 +54,24 @@
     if(!a.length)return empty("Игра не найдена. Проверьте запрос.");
     const L=[...new Set(a.map(g=>gk(g.name)))],pop=q?[]:GAMES.filter(g=>ART.has(g.slug));
     const top=pop.length?`<div class="gx-h">Популярные игры</div><div class="gx">${pop.map(g=>`<a class="gx-c" onclick="go('/catalog?game=${g.slug}')"><img src="/img/games/${g.slug}.webp" alt="" loading="lazy"><b>${esc(g.name)}</b></a>`).join("")}</div><div class="gx-h">Все игры</div>`:"";
-    return top+`<nav class="ai">${L.map(l=>`<a onclick="azGo('${l}')">${l}</a>`).join("")}</nav>`+L.map(l=>`<div class="lh" id="L-${l}">${l}</div><div class="lgrid">${a.filter(g=>gk(g.name)===l).map(g=>`<div class="lr">${ART.has(g.slug)?`<img class="gm" src="/img/games/${g.slug}.webp" alt="" loading="lazy">`:mono(g)}<div class="gt"><a class="gn" onclick="go('/catalog?game=${g.slug}')">${esc(g.name)}</a><div class="gcs">${(g.cats||[]).map(c=>`<a onclick="go('/catalog?game=${g.slug}&category=${c.slug}')">${esc(c.label)}</a>`).join("")}</div></div></div>`).join("")}</div>`).join("");
+    return top+`<nav class="ai">${L.map(l=>`<a onclick="azGo('${l}')">${l}</a>`).join("")}</nav>`+L.map(l=>`<div class="lh" id="L-${l}">${l}</div><div class="lgrid">${a.filter(g=>gk(g.name)===l).map(g=>`<div class="lr"><img class="gm" src="${ART.has(g.slug)?`/img/games/${g.slug}.webp`:cover(g.slug,g.name)}" alt="" loading="lazy"><div class="gt"><a class="gn" onclick="go('/catalog?game=${g.slug}')">${esc(g.name)}</a><div class="gcs">${(g.cats||[]).map(c=>`<a onclick="go('/catalog?game=${g.slug}&category=${c.slug}')">${esc(c.label)}</a>`).join("")}</div></div></div>`).join("")}</div>`).join("");
   };
+
+  // ---------- обложки для всех игр: если картинки нет, рисуем свою (разный узор и цвет для каждой игры)
+  const PAL=[["#3B1D8F","#8B5CF6"],["#1E3A8A","#3B82F6"],["#0F5C5C","#2DD4BF"],["#7A1F5C","#EC4899"],["#7C2D12","#FB923C"],["#14532D","#4ADE80"],["#4C1D95","#C084FC"],["#831843","#FB7185"],["#1E293B","#64748B"],["#713F12","#FACC15"],["#312E81","#818CF8"],["#064E3B","#34D399"]];
+  const ini=n=>{const w=String(n).replace(/[^\p{L}\p{N} ]/gu," ").trim().split(/\s+/).filter(Boolean);return(w.length>1?w[0][0]+w[1][0]:(w[0]||"?").slice(0,2)).toUpperCase()};
+  const cover=(slug,name)=>{
+    const h=hs(slug),[a,b]=PAL[h%PAL.length],k=(h>>4)%5,r=(h>>8)%360,id="c"+(h%99999);
+    let art="";
+    if(k===0)art=[0,1,2,3].map(i=>`<circle cx="${40+i*8}" cy="${150-i*6}" r="${60+i*24}" fill="none" stroke="#fff" stroke-opacity=".${12-i*2}" stroke-width="10"/>`).join("");
+    else if(k===1)art=[0,1,2,3,4,5].map(i=>`<rect x="${-60+i*52}" y="-20" width="22" height="260" fill="#fff" opacity=".07" transform="rotate(24 100 100)"/>`).join("");
+    else if(k===2)art=[0,1,2].map(i=>`<path d="M100 ${10+i*34} l${60-i*14} ${60-i*10} l-${60-i*14} ${60-i*10} l-${60-i*14} -${60-i*10} z" fill="none" stroke="#fff" stroke-opacity=".${9-i*2}" stroke-width="5"/>`).join("");
+    else if(k===3)art=Array.from({length:30},(_,i)=>`<circle cx="${(i%6)*38+10}" cy="${Math.floor(i/6)*38+10}" r="${(i*7+h)%3+2}" fill="#fff" opacity=".18"/>`).join("");
+    else art=[0,1,2,3].map(i=>`<path d="M-10 ${50+i*38} q55 -${24+i*4} 110 0 t120 0" fill="none" stroke="#fff" stroke-opacity=".${14-i*2}" stroke-width="8"/>`).join("");
+    const t=ini(name),fs=t.length>1?76:92;
+    const svg=`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200"><defs><linearGradient id="${id}" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${a}"/><stop offset="1" stop-color="${b}"/></linearGradient></defs><rect width="200" height="200" fill="url(#${id})"/>${art}<text x="100" y="${t.length>1?124:132}" text-anchor="middle" font-family="Inter,Arial,sans-serif" font-weight="800" font-size="${fs}" fill="#fff" stroke="#14082e" stroke-opacity=".35" stroke-width="10" paint-order="stroke" stroke-linejoin="round" letter-spacing="-2">${t.replace(/&/g,"&amp;").replace(/</g,"&lt;")}</text></svg>`;
+    return "data:image/svg+xml;charset=utf-8,"+encodeURIComponent(svg);
+  };
+  window.gameCover=cover;
+  document.addEventListener("error",e=>{const i=e.target;if(!i||i.tagName!=="IMG"||i.dataset.cv)return;const m=/\/img\/games\/([^/?#]+?)\.(?:webp|png|jpe?g)/.exec(i.getAttribute("src")||"");if(!m)return;i.dataset.cv=1;const g=(window.GAMES||[]).find(x=>x.slug===m[1]);i.src=cover(m[1],g?g.name:m[1].replace(/-/g," "))},true);
 })();
