@@ -22,28 +22,6 @@ body.inchat .mm.ch .mc2 .cmp3{transition:padding .2s ease}
 @keyframes dpfl{50%{transform:translateY(-4px)}}
 @media(prefers-reduced-motion:reduce){.dp-fl{animation:none}}
 h2:has(+.dp-ban) .dp-t,.fx-head:has(+.dp-ban) .dp-t{display:none}
-/* главная: герой на сцене */
-.promo{position:relative;overflow:hidden;isolation:isolate;border-color:color-mix(in srgb,var(--p) 45%,transparent)!important;background:#0F0724!important;box-shadow:0 14px 40px -16px rgba(139,92,246,.6)}
-.promo>.dp-ps{position:absolute;inset:0;width:100%;height:100%;z-index:-1}
-.promo::before{content:"";position:absolute;inset:0;z-index:-1;background:linear-gradient(90deg,rgba(15,7,36,.92) 0%,rgba(15,7,36,.55) 55%,transparent 85%)}
-.promo h1,.promo p{text-shadow:0 2px 12px rgba(15,7,36,.7)}
-@media(max-width:760px){.promo::before{background:linear-gradient(90deg,rgba(15,7,36,.9) 0%,rgba(15,7,36,.5) 70%,rgba(15,7,36,.2) 100%)}}
 /* текст баннера по центру высоты, холмы остаются под ним */
 .dp-ban{justify-content:center;padding-bottom:22px}
 .dp-ban::after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,rgba(15,7,36,.8),rgba(15,7,36,0) 62%);pointer-events:none}
-/* главная: минимализм, без картинки */
-.promo{background:radial-gradient(120% 140% at 100% 0,rgba(139,92,246,.22),transparent 60%),var(--c)!important;border-color:var(--line)!important;box-shadow:none!important}
-.promo::before{display:none}
-.promo h1,.promo p{text-shadow:none}
-.promo .pl>:not(h1){display:none!important}
-.promo{padding:22px 20px!important}
-.promo h1{font-size:clamp(24px,6.4vw,34px)!important;line-height:1.15;margin:0 0 8px}
-.promo .btn.big{margin-top:14px}
-/* главная: категории вместо героя */
-.promo{display:none!important}
-.dp-cats{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin:14px 0}
-.dp-cats a{display:flex;align-items:center;gap:12px;padding:16px 14px;border:1px solid var(--line);border-radius:16px;background:var(--c);cursor:pointer;color:inherit;transition:border-color .15s,background .15s}
-.dp-cats a:active,.dp-cats a:hover{border-color:var(--p);background:color-mix(in srgb,var(--p) 10%,var(--c))}
-.dp-cats svg{width:26px;height:26px;flex:none;color:var(--p)}
-.dp-cats b{font-size:14px;font-weight:600;line-height:1.2}
-@media(min-width:761px){.dp-cats{grid-template-columns:repeat(6,1fr)}.dp-cats a{flex-direction:column;align-items:flex-start;gap:14px;padding:18px 16px}}
