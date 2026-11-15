@@ -116,3 +116,25 @@ ${d.team.length ? `<h3>Команда</h3><p class="m">Видны сотрудн
   };
   f.__sec = 1; window.api = f;
 })();
+
+// ---------- сотрудник открыл сайт: его браузер в фоне подбирает недостающие обложки и отдаёт серверу, чтобы они появились у всех
+(function () {
+  let started = false;
+  const crawl = async () => {
+    if (started || !window.dpFindCover || typeof ME === "undefined" || !ME || !["moderator", "admin", "owner"].includes(ME.role)) return;
+    started = true;
+    let list = []; try { list = await oapi2("/cover-missing") } catch { return }
+    let seen = {}; try { seen = JSON.parse(localStorage.dpcw || "{}") } catch { }
+    for (const g of list) {
+      if (seen[g.slug] && Date.now() - seen[g.slug] < 864e5) continue;
+      try {
+        const u = await window.dpFindCover(g.name);
+        if (u) await oapi2("/cover-hint", { method: "POST", body: { slug: g.slug, url: u } });
+      } catch { }
+      seen[g.slug] = Date.now(); try { localStorage.dpcw = JSON.stringify(seen) } catch { }
+      await new Promise(r => setTimeout(r, 4500));
+    }
+  };
+  const oapi2 = (p, o) => fetch("/api" + p, { method: (o && o.method) || "GET", headers: o && o.body ? { "Content-Type": "application/json" } : {}, body: o && o.body ? JSON.stringify(o.body) : undefined, credentials: "same-origin" }).then(r => { if (!r.ok) throw new Error(r.status); return r.json() });
+  const iv = setInterval(() => { crawl(); if (started) clearInterval(iv) }, 8000);
+})();

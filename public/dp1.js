@@ -97,7 +97,18 @@
       function(n){return J("https://ru.wikipedia.org/w/api.php?action=query&format=json&generator=search&gsrlimit=6&prop=pageimages&piprop=thumbnail&pithumbsize=600&origin=*&gsrsearch="+encodeURIComponent(n)).then(function(r){var it=Object.values((r.query||{}).pages||{}).find(function(x){return x.thumbnail&&same(String(x.title).replace(/\s*\(.*\)$/,""),n)});return it?it.thumbnail.source:null})},
       function(n){return J("https://en.wikipedia.org/w/api.php?action=query&format=json&generator=search&gsrlimit=6&prop=pageimages&piprop=thumbnail&pithumbsize=600&origin=*&gsrsearch="+encodeURIComponent(n)).then(function(r){var it=Object.values((r.query||{}).pages||{}).find(function(x){return x.thumbnail&&same(String(x.title).replace(/\s*\(.*\)$/,""),n)});return it?it.thumbnail.source:null})}
     ];
-    var find=async function(n){for(var i=0;i<srcs.length;i++){try{var u=await srcs[i](n);if(u)return u}catch(e){}}return null};
+    // через открытый CORS-прокси: Steam и Google Play сами не отдают данные браузеру
+    var PX=function(u){return "https://api.allorigins.win/raw?url="+encodeURIComponent(u)};
+    srcs.push(function(n){return J(PX("https://store.steampowered.com/api/storesearch/?cc=us&l=english&term="+encodeURIComponent(n))).then(function(r){var it=(r.items||[]).find(function(x){return same(x.name,n)});return it?"https://cdn.cloudflare.steamstatic.com/steam/apps/"+it.id+"/library_600x900.jpg":null})});
+    srcs.push(function(n){return J(PX("https://store.steampowered.com/api/storesearch/?cc=ru&l=russian&term="+encodeURIComponent(n))).then(function(r){var it=(r.items||[]).find(function(x){return same(x.name,n)});return it?"https://cdn.cloudflare.steamstatic.com/steam/apps/"+it.id+"/library_600x900.jpg":null})});
+    srcs.push(function(n){return fetch(PX("https://play.google.com/store/search?c=apps&hl=ru&gl=ru&q="+encodeURIComponent(n))).then(function(r){return r.text()}).then(function(h){var re=/<img[^>]+(?:alt="([^"]*)"[^>]+src="(https:\/\/play-lh\.googleusercontent\.com\/[^"]+)"|src="(https:\/\/play-lh\.googleusercontent\.com\/[^"]+)"[^>]+alt="([^"]*)")/g,m;while((m=re.exec(h))){var t=m[1]||m[4],u=m[2]||m[3];if(t&&same(t,n))return u.replace(/=w\d+-h\d+.*$/,"")+"=w512-h512"}return null})});
+    // последний шанс: самый похожий результат App Store (хотя бы половина слов совпала)
+    var loose=function(n){return jsonp("https://itunes.apple.com/search?entity=software&limit=5&country=ru&term="+encodeURIComponent(n)).then(function(r){var A=toks(n),best=null,bs=0;(r.results||[]).forEach(function(x){var B=toks(String(x.trackName).split(/[:\-–—]/)[0]),c=A.filter(function(w){return w.length>3&&B.indexOf(w)>-1}).length,sc=c/Math.max(A.length,1);if(c>0&&sc>bs){bs=sc;best=x}});return best&&bs>=.5?String(best.artworkUrl512||best.artworkUrl100).replace(/\d+x\d+bb/,"512x512bb"):null})};
+    srcs.push(loose);
+    // картинка должна реально открыться
+    var ok=function(u){return new Promise(function(res){var i=new Image(),t=setTimeout(function(){i.src="";res(false)},7000);i.onload=function(){clearTimeout(t);res(i.naturalWidth>=60)};i.onerror=function(){clearTimeout(t);res(false)};i.src=u})};
+    var find=async function(n){for(var i=0;i<srcs.length;i++){try{var u=await srcs[i](n);if(u&&await ok(u))return u}catch(e){}}return null};
+    window.dpFindCover=find;
     var q=[],run=0;
     var pump=function(){while(run<3&&q.length){var j=q.shift();run++;(function(j){find(j.n).then(function(u){M[j.slug]=u||0;save();if(u)j.imgs.forEach(function(i){i.dataset.lk=1;i.src=u})}).catch(function(){}).then(function(){run--;pump()})})(j)}};
     var pend={};

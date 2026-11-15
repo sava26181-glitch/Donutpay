@@ -1,7 +1,7 @@
 // Обложки игр: сервер сам ищет картинку (Steam, App Store, RAWG), сохраняет в базу и отдаёт.
 // Переменная RAWG_KEY (необязательно, бесплатный ключ с rawg.io/apidocs) добавляет поиск по RAWG: консольные и старые игры.
 import { createHash } from "node:crypto";
-export default function routesCovers(app, { q, wrap }) {
+export default function routesCovers(app, { q, wrap, need, E }) {
   const env = process.env;
   q("create table if not exists game_covers(slug text primary key, ext text, data bytea, miss boolean not null default false, at timestamptz not null default now())").then(() => q("alter table game_covers add column if not exists sha text")).then(() => q("delete from game_covers where miss")).then(() => setTimeout(warm, 20000)).catch(e => console.warn("[covers]", e.message));
   const norm = s => String(s).toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
@@ -50,6 +50,23 @@ export default function routesCovers(app, { q, wrap }) {
       console.log("[covers] прогрев готов: " + gs.length);
     } catch (e) { console.warn("[covers] прогрев:", e.message) }
   }
+  // обложки, найденные браузером сотрудника: сервер сам скачивает картинку (только с разрешённых сайтов) и кэширует для всех
+  const HOST = /^https:\/\/([a-z0-9-]+\.)*(mzstatic\.com|wikimedia\.org|steamstatic\.com|googleusercontent\.com|rustore\.ru)\//i;
+  const isStaff = async req => { const [u] = await q("select role from users where id=$1", [req.user.id]); return ["moderator", "admin", "owner"].includes(u?.role) };
+  app.get("/api/cover-missing", need, wrap(async (req, res) => {
+    if (!await isStaff(req)) throw E(403, "forbidden");
+    res.json(await q("select g.slug,g.name from games g left join game_covers c on c.slug=g.slug where g.is_active and (c.slug is null or c.miss) order by g.name"));
+  }));
+  app.post("/api/cover-hint", need, wrap(async (req, res) => {
+    if (!await isStaff(req)) throw E(403, "forbidden");
+    const slug = String(req.body?.slug || ""), url = String(req.body?.url || ""); if (!/^[a-z0-9-]{1,80}$/.test(slug) || !HOST.test(url) || url.length > 600) throw E(400, "bad hint");
+    const [g] = await q("select 1 from games where slug=$1", [slug]); if (!g) throw E(404, "not found");
+    const [c] = await q("select miss from game_covers where slug=$1", [slug]); if (c && !c.miss) return res.json({ ok: true, kept: true });
+    let b = await B(url).catch(() => null); if (!b) return res.json({ ok: false });
+    const sha = createHash("sha1").update(b).digest("hex"); const [d] = await q("select 1 from game_covers where sha=$1 and slug<>$2 limit 1", [sha, slug]); if (d) return res.json({ ok: false, dup: true });
+    await q("insert into game_covers(slug,ext,data,miss,at,sha) values($1,'img',$2,false,now(),$3) on conflict(slug) do update set data=$2,miss=false,at=now(),sha=$3", [slug, b, sha]);
+    res.json({ ok: true });
+  }));
   // диагностика: открой /api/cover-debug/<slug> в браузере, покажет что ответил каждый источник
   app.get("/api/cover-debug/:slug", wrap(async (req, res) => {
     const slug = String(req.params.slug || ""); if (!/^[a-z0-9-]{1,80}$/.test(slug)) return res.status(404).end();

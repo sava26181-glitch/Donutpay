@@ -82,7 +82,7 @@ catch (e) {
 }
 
 const app = express(); app.set("trust proxy", 1); app.use(shieldEarly()); app.use(shieldGate());
-app.use(helmet({ contentSecurityPolicy: { directives: { defaultSrc: ["'self'"], styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com", "https://accounts.google.com"], fontSrc: ["'self'", "data:", "https://fonts.gstatic.com"], mediaSrc: ["'self'", "blob:", "data:", "https://*.supabase.co"], scriptSrc: ["'self'", "'unsafe-inline'", "https://challenges.cloudflare.com", "https://accounts.google.com", "https://itunes.apple.com"], scriptSrcAttr: ["'unsafe-inline'"], imgSrc: ["'self'", "data:", "blob:", "https://*.supabase.co", "https://*.mzstatic.com", "https://upload.wikimedia.org"], connectSrc: ["'self'", "https://ru.wikipedia.org", "https://en.wikipedia.org", "https://challenges.cloudflare.com", "https://api.mymemory.translated.net", "https://accounts.google.com"], frameSrc: ["https://challenges.cloudflare.com", "https://accounts.google.com"], objectSrc: ["'none'"], baseUri: ["'self'"], frameAncestors: ["'self'"] } } }));
+app.use(helmet({ contentSecurityPolicy: { directives: { defaultSrc: ["'self'"], styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com", "https://accounts.google.com"], fontSrc: ["'self'", "data:", "https://fonts.gstatic.com"], mediaSrc: ["'self'", "blob:", "data:", "https://*.supabase.co"], scriptSrc: ["'self'", "'unsafe-inline'", "https://challenges.cloudflare.com", "https://accounts.google.com", "https://itunes.apple.com"], scriptSrcAttr: ["'unsafe-inline'"], imgSrc: ["'self'", "data:", "blob:", "https://*.supabase.co", "https://*.mzstatic.com", "https://upload.wikimedia.org", "https://*.steamstatic.com", "https://*.googleusercontent.com"], connectSrc: ["'self'", "https://api.allorigins.win", "https://ru.wikipedia.org", "https://en.wikipedia.org", "https://challenges.cloudflare.com", "https://api.mymemory.translated.net", "https://accounts.google.com"], frameSrc: ["https://challenges.cloudflare.com", "https://accounts.google.com"], objectSrc: ["'none'"], baseUri: ["'self'"], frameAncestors: ["'self'"] } } }));
 app.use((_q, res, next) => { res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()"); res.setHeader("X-Permitted-Cross-Domain-Policies", "none"); next(); });
 app.use(express.json({ limit: "50kb", verify: (_req, _res, buf) => { if (buf.includes(0) || /\\u0000/i.test(buf.toString("latin1"))) throw Object.assign(new Error("invalid input"), { status: 400 }); } })); app.use(cookieParser()); app.use((req, res, next) => hooks.csrf ? hooks.csrf(req, res, next) : next());
 // ---- реальное время для всех: после любого успешного изменения данных все открытые страницы получают сигнал «обновись»
@@ -250,7 +250,7 @@ await routes16(app, { q, E, wrap, need, hooks, notifyStaff: t => r2.notifyStaff?
 await routes17(app, { q, E, wrap, need });
 routes18(app, { q, E, wrap, need, hooks, pushUser, notifyStaff: t => r2.notifyStaff?.(t) });
 routes19(app, { q, E, wrap, JWT_SECRET, port: +process.env.PORT || 3000, pool, notifyStaff: t => r2.notifyStaff?.(t) });
-routesCovers(app, { q, wrap });
+routesCovers(app, { q, wrap, need, E });
 routes8(app, { q, pool, tx, E, wrap, need, hooks, pushUser, online: uid => online(uid), notifyStaff: t => r2.notifyStaff?.(t) });
 // каталог одинаков для всех: одинаковые запросы в течение 3 секунд отдаём из памяти (и один запрос в базу вместо сотен одновременных)
 const lcache = new Map();
