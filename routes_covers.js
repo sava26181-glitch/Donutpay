@@ -31,7 +31,15 @@ export default function routesCovers(app, { q, wrap, need, E }) {
     // App Store (США)
     async name => { const it = ((await J("https://itunes.apple.com/search?entity=software&limit=10&country=us&term=" + encodeURIComponent(name))).results || []).find(x => same(String(x.trackName).split(/[:\-–—]/)[0], name) || same(x.trackName, name)); return it ? B(String(it.artworkUrl512 || it.artworkUrl100 || "").replace(/\d+x\d+bb/, "512x512bb")) : null },
     // Википедия (ru, en): картинка статьи с похожим названием
-    async name => { for (const l of ["ru", "en"]) { const r = await J(`https://${l}.wikipedia.org/w/api.php?action=query&format=json&generator=search&gsrlimit=6&gsrsearch=${encodeURIComponent(name)}&prop=pageimages&piprop=thumbnail&pithumbsize=600&origin=*`); const it = Object.values((r.query && r.query.pages) || {}).find(x => x.thumbnail && same(String(x.title).replace(/\s*\(.*\)$/, ""), name)); if (it) { const b = await B(it.thumbnail.source); if (b) return b } } return null }
+    async name => { for (const l of ["ru", "en"]) { const r = await J(`https://${l}.wikipedia.org/w/api.php?action=query&format=json&generator=search&gsrlimit=6&gsrsearch=${encodeURIComponent(name)}&prop=pageimages&piprop=thumbnail&pithumbsize=600&origin=*`); const it = Object.values((r.query && r.query.pages) || {}).find(x => x.thumbnail && same(String(x.title).replace(/\s*\(.*\)$/, ""), name)); if (it) { const b = await B(it.thumbnail.source); if (b) return b } } return null },
+    // Bing Картинки: последняя попытка для всего, что не нашлось в магазинах (первые квадратные миниатюры результата)
+    async name => {
+      const r = await fetch("https://www.bing.com/images/search?form=HDRSC2&q=" + encodeURIComponent(name + " game icon logo") + "&first=1&adlt=moderate", { headers: { "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36", "Accept-Language": "ru,en;q=0.8" }, signal: AbortSignal.timeout(8000) });
+      if (!r.ok) return null; const html = await r.text();
+      const ids = [...new Set([...html.matchAll(/https:\/\/tse\d\.mm\.bing\.net\/th\?id=([A-Za-z0-9._%\-]+)/g)].map(m => m[1]))].slice(0, 4);
+      for (const id of ids) { const b = await B(`https://tse1.mm.bing.net/th?id=${id}&w=256&h=256&c=7&rs=1&pid=ImgDetMain`); if (b) return b }
+      return null;
+    },
   ];
   const mime = b => b[0] === 0x89 ? "image/png" : b[0] === 0x52 ? "image/webp" : "image/jpeg";
   // очередь: не больше 3 поисков одновременно, одна игра не ищется дважды
