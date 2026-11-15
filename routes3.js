@@ -47,7 +47,7 @@ export default function routes3(app, { q, pool, tx, E, wrap, need, pushUser, hoo
     (select min(price_cents) from price_history h where h.listing_id=l.id) min_cents,(select max(price_cents) from price_history h where h.listing_id=l.id) max_cents,
     (select price_cents from price_history h where h.listing_id=l.id and h.created_at<=w.created_at order by h.created_at desc limit 1) price_at_watch,
     (select coalesce(json_agg(json_build_object('p',x.price_cents,'t',x.created_at) order by x.created_at),'[]'::json) from (select price_cents,created_at from price_history where listing_id=l.id order by created_at desc limit 40) x) spark
-    from price_watch w join listings l on l.id=w.listing_id join games g on g.id=l.game_id join users u on u.id=l.seller_id where w.user_id=$1 and l.status='active' order by w.created_at desc`, [req.user.id]))));
+    from price_watch w join listings l on l.id=w.listing_id join games g on g.id=l.game_id join users u on u.id=l.seller_id where w.user_id=$1 and l.status='active' and l.stock>0 order by w.created_at desc`, [req.user.id]))));
   hooks.priceChanged = async listingId => { const ns = await q("select id,user_id,payload from notifications where type='price_drop' and payload->>'listing_id'=$1 and read_at is null and created_at>now()-interval '15 seconds'", [String(listingId)]); for (const n of ns) pushUser(n.user_id, "notify", { id: n.id, type: "price_drop", ...n.payload }); };
 
   // ---------- уведомления ----------

@@ -63,7 +63,6 @@ async function orderPage(id) {
     s === "pending_payment" && buyer && !o.partner_id ? `<button class="btn pri" onclick="payConfirm('${o.id}')">Оплатить ${rub(o.total_cents)}</button>` : "",
     s === "pending_payment" ? `<button class="btn dng" onclick="ost('${o.id}','cancelled')">Отменить заказ</button>` : "",
     ["paid", "in_progress"].includes(s) && o.seller_id === ME.id ? `<button class="btn dng" onclick="ostCancelPaid('${o.id}')">Отменить и вернуть деньги покупателю</button>` : "",
-    s === "paid" && !buyer ? `<button class="btn pri" onclick="ost('${o.id}','in_progress')">Приступить к выполнению</button>` : "",
     ["paid", "in_progress", "dispute"].includes(s) && o.buyer_id === ME.id ? `<button class="btn pri" onclick="ost('${o.id}','completed')">Подтвердить выполнение заказа${s === "dispute" ? " и закрыть спор" : ""}</button>` : "",
     ["paid", "in_progress", "completed"].includes(s) && o.partner_id !== ME.id ? `<button class="btn dng" onclick="disp('${o.id}')">Открыть спор</button>` : "",
   ].filter(Boolean);

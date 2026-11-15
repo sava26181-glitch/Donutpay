@@ -74,6 +74,8 @@
     return "data:image/svg+xml;charset=utf-8,"+encodeURIComponent(svg);
   };
   window.gameCover=cover;
+  // видео-подтверждение выдачи убрано
+  window.vidBtn=()=>"";window.vidOpen=()=>{};
 
   /* запасной поиск обложек прямо из браузера (iTunes, Википедия): работает, даже если сервер не достаёт до магазинов */
   (function(){
@@ -97,13 +99,13 @@
     ];
     var find=async function(n){for(var i=0;i<srcs.length;i++){try{var u=await srcs[i](n);if(u)return u}catch(e){}}return null};
     var q=[],run=0;
-    var pump=function(){while(run<3&&q.length){var j=q.shift();run++;(function(j){find(j.n).then(function(u){M[j.slug]=u||0;save();if(u)j.imgs.forEach(function(i){i.src=u})}).catch(function(){}).then(function(){run--;pump()})})(j)}};
+    var pump=function(){while(run<3&&q.length){var j=q.shift();run++;(function(j){find(j.n).then(function(u){M[j.slug]=u||0;save();if(u)j.imgs.forEach(function(i){i.dataset.lk=1;i.src=u})}).catch(function(){}).then(function(){run--;pump()})})(j)}};
     var pend={};
     window.dpCoverLookup=function(img,slug,name){
-      if(M[slug]){img.src=M[slug];return}
+      if(M[slug]){img.dataset.lk=1;img.src=M[slug];return}
       if(M[slug]===0)return;
       if(pend[slug]){pend[slug].imgs.push(img);return}
       pend[slug]={imgs:[img],n:name};q.push({slug:slug,n:name,imgs:pend[slug].imgs});pump()};
   })();
-  document.addEventListener("error",e=>{const i=e.target;if(!i||i.tagName!=="IMG"||i.dataset.cv)return;const m=/\/(?:img\/games|api\/cover)\/([^/?#]+?)(?:\.(?:webp|png|jpe?g))?(?:[?#]|$)/.exec(i.getAttribute("src")||"");if(!m)return;i.dataset.cv=1;const g=(window.GAMES||[]).find(x=>x.slug===m[1]);var nm=g?g.name:m[1].replace(/-/g," ");i.src=cover(m[1],nm);if(window.dpCoverLookup)window.dpCoverLookup(i,m[1],nm)},true);
+  document.addEventListener("error",e=>{const i=e.target;if(i&&i.tagName==="IMG"&&i.dataset.lk&&!i.dataset.cv2){i.dataset.cv2=1;const sl=i.dataset.sl||"",gg=(window.GAMES||[]).find(x=>x.slug===sl);i.src=cover(sl,gg?gg.name:sl.replace(/-/g," "));return}if(!i||i.tagName!=="IMG"||i.dataset.cv)return;const m=/\/(?:img\/games|api\/cover)\/([^/?#]+?)(?:\.(?:webp|png|jpe?g))?(?:[?#]|$)/.exec(i.getAttribute("src")||"");if(!m)return;i.dataset.cv=1;i.dataset.sl=m[1];const g=(window.GAMES||[]).find(x=>x.slug===m[1]);var nm=g?g.name:m[1].replace(/-/g," ");i.src=cover(m[1],nm);if(window.dpCoverLookup)window.dpCoverLookup(i,m[1],nm)},true);
 })();

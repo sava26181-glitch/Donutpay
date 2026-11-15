@@ -320,8 +320,8 @@ export default function routes2(app, { q, pool, tx, E, wrap, need, online, B, ho
   app.post("/api/tickets", need, wrap(async (req, res) => {
     let { category, subject, body, orderId, orderNumber, attachmentId } = req.body || {}; if (!TC.includes(category) || String(subject || "").length < 3 || String(body || "").length < 5) throw E(400, "invalid input");
     if (orderNumber !== undefined && orderNumber !== null && String(orderNumber).trim() !== "") {
-      const n = String(orderNumber).replace(/\D/g, ""); if (!n || n.length > 12) throw E(400, "Номер заказа указан неверно");
-      const [o] = await q("select id from orders where number=$1 and $2 in (buyer_id,seller_id)", [n, req.user.id]); if (!o) throw E(400, "Заказ с таким номером не найден среди ваших заказов");
+      const n = String(orderNumber).replace(/[^0-9A-Za-z]/g, "").toUpperCase(); if (!n || n.length > 16) throw E(400, "Номер заказа указан неверно");
+      const [o] = await q("select id from orders where upper(number)=$1 and $2 in (buyer_id,seller_id)", [n, req.user.id]); if (!o) throw E(400, "Заказ с таким номером не найден среди ваших заказов");
       orderId = o.id;
     } else orderId = undefined;
     if (orderId) { const [o] = await q("select 1 from orders where id=$1 and $2 in (buyer_id,seller_id)", [orderId, req.user.id]); if (!o) throw E(400, "bad order"); }

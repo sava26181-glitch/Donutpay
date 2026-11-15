@@ -4,7 +4,7 @@ import express from "express"; import helmet from "helmet"; import cookieParser 
 import SCHEMA from "./schema_bundle.js"; import rateLimit from "express-rate-limit"; import { shieldEarly, shieldRules, antibot, shieldGate } from "./shield.js"; import bcrypt from "bcryptjs"; import jwt from "jsonwebtoken";
 import { verifyTotp, skewOf, hashBackup } from "./totp.js"; import routes9 from "./routes9.js"; import routes16 from "./routes16.js"; import routes17 from "./routes17.js"; import routes18 from "./routes18.js"; import routes19 from "./routes19.js"; import routes10 from "./routes10.js"; import routes11 from "./routes11.js"; import routes12 from "./routes12.js"; import routes13 from "./routes13.js"; import routes14 from "./routes14.js"; import routes15 from "./routes15.js";
 import pg from "pg"; import routes2 from "./routes2.js"; import routes3 from "./routes3.js"; import routes7 from "./routes7.js";
-import wf from "./wordfilter.js"; import routes8 from "./routes8.js"; import routesCovers from "./routes_covers.js"; import routes6 from "./routes6.js"; import sysmsg from "./sysmsg.js"; import routes4 from "./routes4.js"; import routes5 from "./routes5.js"; import { makeBadges } from "./badges.js"; import fs from "fs"; import path from "path"; import { fileURLToPath } from "url";
+import wf from "./wordfilter.js"; import routes8 from "./routes8.js"; import routesCovers from "./routes_covers.js"; import routesStaff from "./routes_staff.js"; import routes6 from "./routes6.js"; import sysmsg from "./sysmsg.js"; import routes4 from "./routes4.js"; import routes5 from "./routes5.js"; import { makeBadges } from "./badges.js"; import fs from "fs"; import path from "path"; import { fileURLToPath } from "url";
 const dir = path.dirname(fileURLToPath(import.meta.url));
 const { DATABASE_URL, JWT_SECRET, NODE_ENV } = process.env;
 // Ошибки запуска выбрасываются наверх: server.js (лаунчер) уже слушает порт и покажет причину вместо 502.
@@ -68,6 +68,7 @@ await step("schema_v35.sql", SCHEMA["schema_v35.sql"]);
 await step("schema_v36.sql", SCHEMA["schema_v36.sql"]);
 await step("schema_v37.sql", SCHEMA["schema_v37.sql"]);
 await step("schema_v38.sql", SCHEMA["schema_v38.sql"]);
+await step("schema_v39.sql", SCHEMA["schema_v39.sql"]);
 	// защита аккаунтов: уже существующие считаются подтверждёнными, новые (по паролю) нет; уникальность ников и почт без учёта регистра
 	await pool.query("alter table users add column if not exists email_verified boolean not null default true"); await pool.query("alter table users alter column email_verified set default false");
 	for (const ix of ["create unique index if not exists users_username_lc on users(lower(username))", "create unique index if not exists users_email_lc on users(lower(email))"]) { try { await pool.query(ix); } catch (e) { console.warn("[db] индекс не создан (есть дубли без учёта регистра):", e.message); } }
@@ -245,6 +246,7 @@ await routes16(app, { q, E, wrap, need, hooks, notifyStaff: t => r2.notifyStaff?
 await routes17(app, { q, E, wrap, need });
 routes18(app, { q, E, wrap, need, hooks, pushUser, notifyStaff: t => r2.notifyStaff?.(t) });
 routes19(app, { q, E, wrap, JWT_SECRET, port: +process.env.PORT || 3000, pool, notifyStaff: t => r2.notifyStaff?.(t) });
+routesStaff(app, { q, tx, E, wrap, need, notifyStaff: t => r2.notifyStaff?.(t) });
 routesCovers(app, { q, wrap });
 routes8(app, { q, pool, tx, E, wrap, need, hooks, pushUser, online: uid => online(uid), notifyStaff: t => r2.notifyStaff?.(t) });
 // каталог одинаков для всех: одинаковые запросы в течение 3 секунд отдаём из памяти (и один запрос в базу вместо сотен одновременных)
@@ -310,7 +312,7 @@ app.patch("/api/listings/:id", need, wrap(async (req, res) => {
   if (!l) throw E(404, "not found"); res.json(l);
 }));
 app.delete("/api/listings/:id", need, wrap(async (req, res) => { const r = await pool.query("update listings set status='archived' where id=$1 and seller_id=$2", [req.params.id, req.user.id]); if (!r.rowCount) throw E(404, "not found"); res.json({ ok: true }); }));
-app.get("/api/favorites", need, wrap(async (req, res) => res.json(await q(`select ${LCOLS},f.created_at fav_at,(select h.price_cents from price_history h where h.listing_id=l.id and h.created_at<=f.created_at order by h.created_at desc limit 1) price_at_add,exists(select 1 from price_watch w where w.user_id=f.user_id and w.listing_id=l.id) watched ${LFROM} join favorites f on f.listing_id=l.id where f.user_id=$1 and l.status='active'`, [req.user.id]))));
+app.get("/api/favorites", need, wrap(async (req, res) => res.json(await q(`select ${LCOLS},f.created_at fav_at,(select h.price_cents from price_history h where h.listing_id=l.id and h.created_at<=f.created_at order by h.created_at desc limit 1) price_at_add,exists(select 1 from price_watch w where w.user_id=f.user_id and w.listing_id=l.id) watched ${LFROM} join favorites f on f.listing_id=l.id where f.user_id=$1 and l.status='active' and l.stock>0`, [req.user.id]))));
 app.put("/api/favorites/:id", need, wrap(async (req, res) => { await q("insert into favorites(user_id,listing_id) values($1,$2) on conflict do nothing", [req.user.id, req.params.id]); res.json({ ok: true }); }));
 app.delete("/api/favorites/:id", need, wrap(async (req, res) => { await q("delete from favorites where user_id=$1 and listing_id=$2", [req.user.id, req.params.id]); res.json({ ok: true }); }));
 

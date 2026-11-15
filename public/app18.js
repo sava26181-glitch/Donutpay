@@ -130,7 +130,7 @@ ${info.filter(f => f.k !== "unverified").length ? `<div class="wdin">${info.filt
     window._tkc = window._tkc || "other";
     mdl(`<div class="spf"><div class="spf-h"><h3>Новое обращение</h3><a onclick="$('#md').remove()" aria-label="Закрыть">${svg("M6 6l12 12M18 6L6 18")}</a></div>
 <div class="sp-cats">${Object.entries(CATS).map(c => `<button type="button" data-c="${c[0]}" class="${window._tkc === c[0] ? "on" : ""}" onclick="spCat('${c[0]}')">${c[1]}</button>`).join("")}</div>
-<div id="spo" ${["order", "payment"].includes(window._tkc) ? "" : "hidden"}><input id="to" inputmode="numeric" autocomplete="off" maxlength="12" placeholder="Номер заказа, например 1042"><div class="spf-n" style="text-align:left;margin:6px 0 10px">Номер виден в карточке заказа</div></div>
+<div id="spo" ${["order", "payment"].includes(window._tkc) ? "" : "hidden"}><input id="to" inputmode="text" autocapitalize="characters" autocomplete="off" maxlength="17" placeholder="Номер заказа, например 976B126E"><div class="spf-n" style="text-align:left;margin:6px 0 10px">Номер виден в карточке заказа</div></div>
 <input id="ts" maxlength="120" placeholder="Тема" autocomplete="off">
 <textarea id="tb" rows="5" maxlength="3000" oninput="tkCount()" placeholder="Что случилось"></textarea><div class="spf-n" id="tbn">0 / 3000</div>
 <div id="achip"></div>
