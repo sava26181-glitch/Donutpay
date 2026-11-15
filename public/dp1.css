@@ -126,3 +126,4 @@ html[style*="--bg: #08080C"] input:not([type=checkbox]):not([type=radio]):not([t
 .dp-rr{margin-top:8px}
 /* поиск внутри обёрток с иконкой: поле без своей плашки */
 .tqf input,label input[type=search],.tqs input{background:transparent!important;box-shadow:none!important}
+html[style] label.tqf input[type=search]:not(#a):not(#b),html[style] .tqs input:not(#a):not(#b){background:transparent!important;border:0!important;box-shadow:none!important}

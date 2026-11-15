@@ -8,7 +8,7 @@
   const dt = d => new Date(d).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 
   // тексты уведомлений
-  try { if (typeof NT6 === "object") { NT6.review_ok = n => `Модераторы проверили отзыв к заказу #${n.number}: он выставлен честно и остаётся.${n.note ? " " + n.note : ""}`; NT6.review_removed = n => `Отзыв к заказу #${n.number} удалён модератором.${n.note ? " " + n.note : ""}` } } catch { }
+  try { if (typeof NT6 === "object") { NT6.review_ok = n => `Модераторы проверили отзыв к заказу #${n.number}: он выставлен честно и остаётся.${n.note ? " " + n.note : ""}`; NT6.review_report = n => `Жалоба на отзыв к заказу #${n.number}: нужно проверить`; NT6.review_removed = n => `Отзыв к заказу #${n.number} удалён модератором.${n.note ? " " + n.note : ""}` } } catch { }
 
   // ---------- жалоба продавца на отзыв (кнопка рядом со спором)
   const cache = new Map();
@@ -86,4 +86,33 @@ ${d.team.length ? `<h3>Команда</h3><p class="m">Видны сотрудн
 
   // время на сайте: пинг раз в минуту, пока вкладка открыта
   setInterval(() => { try { if (staff() && !document.hidden) api("/staff/ping", { method: "POST", body: {} }).catch(() => { }) } catch { } }, 60000);
+})();
+
+// ---------- код подтверждения на вывод и покупку
+(function () {
+  const oapi = window.api; if (typeof oapi !== "function" || oapi.__sec) return;
+  const PUR = [[/^\/finance\/withdraw$/, "withdraw", "вывод средств"], [/^\/orders$/, "purchase", "покупку"]];
+  const LAST = {};
+  const ask = (purpose, label, via) => new Promise(res => {
+    let sent = false;
+    const send = async () => { try { const r = await oapi("/security/code", { method: "POST", body: { purpose } }); sent = true; const m = document.getElementById("dpsm"); if (m) m.textContent = r.via === "telegram" ? "Код отправлен вам в Telegram" : "Код отправлен на почту" } catch (e) { const m = document.getElementById("dpsm"); if (m) m.textContent = e.message } };
+    mdl(`<h3 style="margin:0 0 6px">Подтвердите ${label}</h3><p class="m" id="dpsm" style="margin:0 0 12px">Отправляем код...</p><input id="dpsc" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="6 цифр" style="width:100%;font-size:22px;letter-spacing:6px;text-align:center"><button class="btn pri" style="width:100%;margin-top:10px" id="dpsb">Подтвердить</button><button class="btn" style="width:100%;margin-top:8px" id="dpsr">Отправить код ещё раз</button>`);
+    send();
+    const done = v => { clearInterval(t); res(v); const m = document.getElementById("md"); if (m) m.remove() };
+    document.getElementById("dpsb").onclick = () => { const v = (document.getElementById("dpsc").value || "").replace(/\D/g, ""); if (v.length === 6) done(v); else document.getElementById("dpsm").textContent = "Введите 6 цифр из сообщения" };
+    document.getElementById("dpsr").onclick = send;
+    const t = setInterval(() => { if (!document.getElementById("dpsc")) { clearInterval(t); res(null) } }, 400);
+  });
+  const f = async function (p, o) {
+    const m = o && o.method === "POST" && PUR.find(x => x[0].test(p));
+    if (!m) return oapi.apply(this, arguments);
+    let st = null; try { st = await oapi("/security/status?purpose=" + m[1]) } catch { }
+    if (!st || !st.required) return oapi.apply(this, arguments);
+    const c = LAST[m[1]];
+    if (c && Date.now() - c.t < 540000) { try { const r = await oapi(p, { ...o, body: { ...o.body, code: c.code } }); delete LAST[m[1]]; return r } catch (e) { if (!/код/i.test(e.message)) throw e; delete LAST[m[1]] } }
+    const code = await ask(m[1], m[2], st.via); if (!code) throw new Error("Подтверждение отменено");
+    LAST[m[1]] = { code, t: Date.now() };
+    try { const r = await oapi(p, { ...o, body: { ...o.body, code } }); delete LAST[m[1]]; return r } catch (e) { if (/код/i.test(e.message)) delete LAST[m[1]]; throw e }
+  };
+  f.__sec = 1; window.api = f;
 })();

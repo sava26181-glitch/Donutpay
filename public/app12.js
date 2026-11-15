@@ -7,6 +7,7 @@
     ["disputes", "Открытые споры", "/admin?tab=disputes"],
     ["tickets", "Обращения ждут ответа", "/admin?tab=tickets"],
     ["reports", "Жалобы", "/admin?tab=reports"],
+    ["review_reports", "Жалобы на отзывы", "/admin?tab=staff"],
     ["tournaments", "Турниры идут: подвести итог", "/tournaments"],
     ["paused", "Продажи на паузе: споры больше 5%", "/admin?tab=paused"],
     ...(ad ? [["kyc", "Видео-верификация: проверить", "/admin?tab=kyc"], ["withdrawals", "Выводы в обработке", "/admin?tab=withdrawals"]] : [])

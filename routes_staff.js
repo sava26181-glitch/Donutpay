@@ -71,6 +71,7 @@ export default function routesStaff(app, { q, tx, E, wrap, need, notifyStaff }) 
     const [past] = await q("select 1 from review_reports where order_id=$1 and verdict='keep'", [o.id]); if (past) throw E(409, "Отзыв уже проверен и оставлен");
     await q("insert into review_reports(order_id,reporter_id,reason) values($1,$2,$3)", [o.id, req.user.id, reason]);
     try { notifyStaff?.("Жалоба на отзыв к заказу #" + o.number) } catch { }
+    try { await q("insert into notifications(user_id,type,payload) select id,'review_report',$1 from users where role in ('moderator','admin','owner') and coalesce(staff_title,'')<>'tournament_mod'", [{ number: o.number }]) } catch { }
     res.json({ ok: true });
   }));
   app.get("/api/staff/reports", need, staffGate, wrap(async (req, res) => {
