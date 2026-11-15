@@ -63,7 +63,7 @@ async function orderPage(id) {
     s === "pending_payment" && buyer && !o.partner_id ? `<button class="btn pri" onclick="payConfirm('${o.id}')">Оплатить ${rub(o.total_cents)}</button>` : "",
     s === "pending_payment" ? `<button class="btn dng" onclick="ost('${o.id}','cancelled')">Отменить заказ</button>` : "",
     ["paid", "in_progress"].includes(s) && o.seller_id === ME.id ? `<button class="btn dng" onclick="ostCancelPaid('${o.id}')">Отменить и вернуть деньги покупателю</button>` : "",
-    ["paid", "in_progress", "dispute"].includes(s) && o.buyer_id === ME.id ? `<button class="btn pri" onclick="ost('${o.id}','completed')">Подтвердить выполнение заказа${s === "dispute" ? " и закрыть спор" : ""}</button>` : "",
+    ["paid", "in_progress", "dispute"].includes(s) && o.buyer_id === ME.id ? `<button class="btn pri" onclick="ostConfirm('${o.id}')">Подтвердить выполнение заказа${s === "dispute" ? " и закрыть спор" : ""}</button>` : "",
     ["paid", "in_progress", "completed"].includes(s) && o.partner_id !== ME.id ? `<button class="btn dng" onclick="disp('${o.id}')">Открыть спор</button>` : "",
   ].filter(Boolean);
   window._ot = { id: o.id, conv: o.conversation_id, lot: o.listing_id, buyer: o.buyer_id, seller: o.seller_id };
@@ -228,4 +228,5 @@ loadHist = async function (el) {
   } catch (e) { el.innerHTML = `<p class="m">История цены недоступна: ${esc(e.message)}</p>` }
 };
 
+const ostConfirm = id => ask("Точно подтвердить выполнение заказа? Деньги сразу уйдут продавцу, отменить это нельзя.", "Да, подтвердить", () => ost(id, "completed"));
 const ostCancelPaid = id => ask("Отменить заказ? Деньги будут возвращены покупателю.", "Отменить заказ", act(async () => { await api(`/orders/${id}/status`, { method: "POST", body: { status: "cancelled" } }); toast("Заказ отменён, деньги возвращены покупателю"); route() }));

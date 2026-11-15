@@ -19,7 +19,18 @@ export default function routesStaff(app, { q, tx, E, wrap, need, notifyStaff }) 
 
   // ---- журнал действий персонала (по успешным запросам)
   const roleCache = new Map();
-  const roleOf = async id => { const c = roleCache.get(id); if (c && Date.now() - c.t < 60000) return c.r; const [u] = await q("select role from users where id=$1", [id]).catch(() => []); const r = u?.role || null; roleCache.set(id, { r, t: Date.now() }); return r };
+  const infoOf = async id => { const c = roleCache.get(id); if (c && Date.now() - c.t < 20000) return c; const [u] = await q("select role,staff_title from users where id=$1", [id]).catch(() => []); const n = { r: u?.role || null, title: u?.staff_title || null, t: Date.now() }; roleCache.set(id, n); return n };
+  const roleOf = async id => (await infoOf(id)).r;
+  // звания ограничивают доступ модераторов: «модератор отзывов» и «модератор турниров» не заходят в остальные разделы админки
+  const ALLOW = { review_mod: [/^\/api\/admin\/counts$/, /^\/api\/admin\/orders\//], tournament_mod: [/^\/api\/admin\/counts$/] };
+  app.use("/api/admin", async (req, res, next) => {
+    try {
+      if (!req.user?.id) return next();
+      const i = await infoOf(req.user.id);
+      if (i.r === "moderator" && ALLOW[i.title] && !ALLOW[i.title].some(re => re.test(req.originalUrl.split("?")[0]))) return res.status(403).json({ error: "Ваше звание не даёт доступ к этому разделу" });
+    } catch { }
+    next();
+  });
   const KINDS = [[/^\/api\/admin\/report-close\/[^/]+$/, "report"], [/^\/api\/admin\/tickets\/[^/]+\/status$/, "ticket"], [/^\/api\/tickets\/[^/]+\/messages$/, "ticket"], [/^\/api\/admin\/disputes\/[^/]+\/resolve$/, "arbitration"]];
   app.use((req, res, next) => {
     if (req.method !== "POST" || !req.path.startsWith("/api/")) return next();
@@ -113,7 +124,7 @@ export default function routesStaff(app, { q, tx, E, wrap, need, notifyStaff }) 
     if (title === "senior_admin" && (req.me.role !== "owner" || t.role !== "admin")) throw E(403, "Старшего админа назначает только главный");
     if (title && title !== "senior_admin" && t.role !== "moderator") throw E(400, "Это звание только для модераторов");
     if (!title && rank(req.me) < 3 && t.staff_title === "senior_admin") throw E(403, "forbidden");
-    await q("update users set staff_title=$2 where id=$1", [t.id, title]);
+    await q("update users set staff_title=$2 where id=$1", [t.id, title]); roleCache.clear();
     res.json({ ok: true });
   }));
 }
