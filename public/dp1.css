@@ -29,7 +29,12 @@ h2:has(+.dp-ban) .dp-t,.fx-head:has(+.dp-ban) .dp-t{display:none}
 /* тёмно-фиолетовый фон только у стандартной тёмной темы; остальные темы (белая, синяя, красная...) красят сайт сами */
 html[style*="--bg: #08080C"] body,html[style*="--bg:#08080C"] body{--bg:#0E0722;--c:#171030;--line:#2B2152;background:linear-gradient(180deg,#1A0E3D 0,#0E0722 320px) no-repeat,#0E0722!important}
 /* знак в шапке не крутится */
-.lga svg,.lga{animation:none!important}
+/* стрелки логотипа: один плавный оборот при загрузке и при нажатии/наведении, без постоянного кручения */
+.lga{animation:none!important}
+.lga svg{animation:dpspin 1.3s cubic-bezier(.45,0,.2,1) 1!important}
+.lga:hover svg,.lga:active svg{animation:dpspin2 1.3s cubic-bezier(.45,0,.2,1) 1!important}
+@keyframes dpspin{to{transform:rotate(360deg)}}@keyframes dpspin2{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.lga svg,.lga:hover svg{animation:none!important}}
 /* «Новое объявление» на странице «Мои объявления» убрано */
 #app>h2+button[onclick*="/sell"]{display:none!important}
 /* нижнее меню: под ним ничего не просвечивает */

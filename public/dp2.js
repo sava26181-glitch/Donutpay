@@ -8,7 +8,7 @@
   const dt = d => new Date(d).toLocaleString("ru-RU", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 
   // тексты уведомлений
-  try { if (typeof NT6 === "object") { NT6.review_ok = n => `Модераторы проверили отзыв к заказу #${n.number}: он выставлен честно и остаётся.${n.note ? " " + n.note : ""}`; NT6.review_report = n => `Жалоба на отзыв к заказу #${n.number}: нужно проверить`; NT6.review_removed = n => `Отзыв к заказу #${n.number} удалён модератором.${n.note ? " " + n.note : ""}` } } catch { }
+  try { if (typeof NT6 === "object") { NT6.review_ok = n => `Модераторы проверили отзыв к заказу #${n.number}: он выставлен честно и остаётся.${n.note ? " " + n.note : ""}`; NT6.confirm_reminder = n => `Заказ #${n.number} оплачен. Получили товар? Подтвердите выполнение заказа, иначе продавец не получит деньги.`; NT6.review_report = n => `Жалоба на отзыв к заказу #${n.number}: нужно проверить`; NT6.review_removed = n => `Отзыв к заказу #${n.number} удалён модератором.${n.note ? " " + n.note : ""}` } } catch { }
 
   // ---------- жалоба продавца на отзыв (кнопка рядом со спором)
   const cache = new Map();

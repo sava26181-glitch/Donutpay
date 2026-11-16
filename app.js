@@ -4,7 +4,7 @@ import express from "express"; import helmet from "helmet"; import cookieParser 
 import SCHEMA from "./schema_bundle.js"; import rateLimit from "express-rate-limit"; import { shieldEarly, shieldRules, antibot, shieldGate } from "./shield.js"; import bcrypt from "bcryptjs"; import jwt from "jsonwebtoken";
 import { verifyTotp, skewOf, hashBackup } from "./totp.js"; import routes9 from "./routes9.js"; import routes16 from "./routes16.js"; import routes17 from "./routes17.js"; import routes18 from "./routes18.js"; import routes19 from "./routes19.js"; import routes10 from "./routes10.js"; import routes11 from "./routes11.js"; import routes12 from "./routes12.js"; import routes13 from "./routes13.js"; import routes14 from "./routes14.js"; import routes15 from "./routes15.js";
 import pg from "pg"; import routes2 from "./routes2.js"; import routes3 from "./routes3.js"; import routes7 from "./routes7.js";
-import wf from "./wordfilter.js"; import routes8 from "./routes8.js"; import routesCovers from "./routes_covers.js"; import routesStaff from "./routes_staff.js"; import routesSec from "./routes_sec.js"; import routes6 from "./routes6.js"; import sysmsg from "./sysmsg.js"; import routes4 from "./routes4.js"; import routes5 from "./routes5.js"; import { makeBadges } from "./badges.js"; import fs from "fs"; import path from "path"; import { fileURLToPath } from "url";
+import wf from "./wordfilter.js"; import routes8 from "./routes8.js"; import routesCovers from "./routes_covers.js"; import routesStaff from "./routes_staff.js"; import routesSec from "./routes_sec.js"; import routesRemind from "./routes_remind.js"; import routes6 from "./routes6.js"; import sysmsg from "./sysmsg.js"; import routes4 from "./routes4.js"; import routes5 from "./routes5.js"; import { makeBadges } from "./badges.js"; import fs from "fs"; import path from "path"; import { fileURLToPath } from "url";
 const dir = path.dirname(fileURLToPath(import.meta.url));
 const { DATABASE_URL, JWT_SECRET, NODE_ENV } = process.env;
 // Ошибки запуска выбрасываются наверх: server.js (лаунчер) уже слушает порт и покажет причину вместо 502.
@@ -143,6 +143,7 @@ hooks.modNotify = async (id, title, reason) => {
   try { r2.notifyStaff?.("Лот на проверку" + (reason ? " (" + reason + ")" : "") + ": " + String(title || "").slice(0, 80)); } catch { }
 };
 routesSec(app, { q, E, wrap, need, hooks });
+routesRemind(app, { q, hooks });
 routesStaff(app, { q, tx, E, wrap, need, notifyStaff: t => r2.notifyStaff?.(t) });
 const r2 = routes2(app, { q, pool, tx, E, wrap, need, online, B, hooks });
 const r3 = routes3(app, { q, pool, tx, E, wrap, need, pushUser, hooks });
