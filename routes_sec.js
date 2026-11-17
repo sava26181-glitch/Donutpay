@@ -5,17 +5,20 @@ import crypto from "node:crypto";
 import { sendMail, mailConfigured, mailErr } from "./mailer.js";
 export default function routesSec(app, { q, E, wrap, need, hooks }) {
   q("create table if not exists action_codes(id bigserial primary key, user_id uuid not null, purpose text not null, code_hash text not null, expires_at timestamptz not null, attempts int not null default 0, used_at timestamptz, created_at timestamptz not null default now())")
-    .then(() => q("create index if not exists i_ac_u on action_codes(user_id, purpose, created_at desc)")).catch(e => console.warn("[sec]", e.message));
+    .then(() => q("alter table action_codes add column if not exists ok_at timestamptz")).then(() => q("create index if not exists i_ac_u on action_codes(user_id, purpose, created_at desc)")).catch(e => console.warn("[sec]", e.message));
   const h = c => crypto.createHash("sha256").update(String(c)).digest("hex");
   const on = () => process.env.SEC_CODES !== "off";
   const PURPOSE = { withdraw: "вывод средств", purchase: "покупку" };
   const chan = u => ({ tg: !!(u?.telegram_id && process.env.TELEGRAM_BOT_TOKEN && hooks.tgSend), mail: !!(u?.email && mailConfigured()) });
   const userOf = id => q("select id,email,telegram_id from users where id=$1", [id]).then(r => r[0]);
-  const purposeOf = p => p === "/api/orders" ? "purchase" : "withdraw";
+  // после подтверждённой покупки 10 минут не спрашиваем код повторно (создание заказа + оплата с баланса = одно подтверждение)
+  const grantOk = async uid => !!(await q("select 1 from action_codes where user_id=$1 and purpose='purchase' and ok_at>now()-interval '10 minutes' limit 1", [uid]))[0];
+  const purposeOf = p => p === "/api/finance/withdraw" ? "withdraw" : "purchase";
 
   app.get("/api/security/status", need, wrap(async (req, res) => {
     const p = PURPOSE[req.query.purpose] ? req.query.purpose : null; if (!p) throw E(400, "bad purpose");
-    const c = chan(await userOf(req.user.id)); res.json({ required: on() && (c.tg || c.mail), via: c.tg ? "telegram" : c.mail ? "email" : null });
+    const c = chan(await userOf(req.user.id)); const granted = p === "purchase" && await grantOk(req.user.id);
+    res.json({ required: on() && (c.tg || c.mail) && !granted, via: c.tg ? "telegram" : c.mail ? "email" : null });
   }));
   app.post("/api/security/code", need, wrap(async (req, res) => {
     const p = PURPOSE[req.body?.purpose] ? req.body.purpose : null; if (!p) throw E(400, "bad purpose");
@@ -37,14 +40,15 @@ export default function routesSec(app, { q, E, wrap, need, hooks }) {
   const gate = wrap(async (req, res, next) => {
     if (!on() || !req.user?.id) return next();
     const u = await userOf(req.user.id), c = chan(u); if (!c.tg && !c.mail) return next();
-    const p = purposeOf(req.path), code = String(req.body?.code || "").replace(/\D/g, "");
+    const p = purposeOf(req.path); if (p === "purchase" && await grantOk(u.id)) return next(); const code = String(req.body?.code || "").replace(/\D/g, "");
     const fail = m => res.status(428).json({ error: m, needCode: true, purpose: p });
     if (code.length !== 6) return fail("Введите код подтверждения");
     const [r] = await q("select id,code_hash,attempts from action_codes where user_id=$1 and purpose=$2 and used_at is null and expires_at>now() order by id desc limit 1", [u.id, p]);
     if (!r || r.attempts >= 5) return fail("Код недействителен, запросите новый");
     if (r.code_hash !== h(code)) { await q("update action_codes set attempts=attempts+1 where id=$1", [r.id]); return fail("Неверный код") }
-    res.on("finish", () => { if (res.statusCode < 400) q("update action_codes set used_at=now() where id=$1", [r.id]).catch(() => { }) }); delete req.body.code; next(); // код гасим только после успешного действия: при ошибке в форме вводить заново не нужно
+    res.on("finish", () => { if (res.statusCode < 400) q("update action_codes set used_at=now(), ok_at=now() where id=$1", [r.id]).catch(() => { }) }); delete req.body.code; next(); // код гасим только после успешного действия: при ошибке в форме вводить заново не нужно
   });
   app.post("/api/finance/withdraw", gate);
   app.post("/api/orders", gate);
+  app.post("/api/orders/:id/pay-balance", gate);
 }

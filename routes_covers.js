@@ -80,7 +80,8 @@ export default function routesCovers(app, { q, wrap, need, E }) {
     res.json({ ok: true });
   }));
   // диагностика: открой /api/cover-debug/<slug> в браузере, покажет что ответил каждый источник
-  app.get("/api/cover-debug/:slug", wrap(async (req, res) => {
+  app.get("/api/cover-debug/:slug", need, wrap(async (req, res) => {
+    if (!await isStaff(req)) throw E(403, "forbidden");
     const slug = String(req.params.slug || ""); if (!/^[a-z0-9-]{1,80}$/.test(slug)) return res.status(404).end();
     const [g] = await q("select name from games where slug=$1", [slug]); if (!g) return res.status(404).json({ error: "нет такой игры" });
     const out = []; for (let i = 0; i < src.length; i++) { const t = Date.now(); try { const b = await src[i](g.name); out.push({ source: i, found: !!b, bytes: b ? b.length : 0, ms: Date.now() - t }) } catch (e) { out.push({ source: i, error: String(e.message || e), ms: Date.now() - t }) } }

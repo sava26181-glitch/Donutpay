@@ -429,7 +429,7 @@ export default function routes2(app, { q, pool, tx, E, wrap, need, online, B, ho
   app.post("/api/admin/users/:id/role", need, staff(...AD), wrap(async (req, res) => {
     const r = req.body?.role; if (!["user", "moderator", "admin", "organizer"].includes(r) || req.params.id === req.user.id) throw E(400, "bad role");
     const [t] = await q("select role from users where id=$1", [req.params.id]); if (!t || t.role === "owner") throw E(403, "forbidden"); if ((r === "admin" || t.role === "admin") && req.role !== "owner") throw E(403, "only owner can manage admins");
-    await q("update users set role=$2 where id=$1", [req.params.id, r]); await audit(req.user.id, "role_change", "user", req.params.id, { from: t.role, to: r }); res.json({ ok: true });
+    await q("update users set role=$2, staff_title=null where id=$1", [req.params.id, r]); await audit(req.user.id, "role_change", "user", req.params.id, { from: t.role, to: r }); res.json({ ok: true });
   }));
   app.get("/api/admin/listings/all", need, staff(...ST), wrap(async (req, res) => res.json(await q("select l.id,l.title,l.status,l.mod_reason,l.price_cents,l.created_at,u.username seller from listings l join users u on u.id=l.seller_id where ($1::text is null or l.status=$1) and ($2::text is null or l.title ilike $2 or u.username ilike $2) order by l.created_at desc limit 300", [req.query.status || null, req.query.q ? "%" + req.query.q + "%" : null]))));
   app.get("/api/admin/listings/:id/history", need, staff(...ST), wrap(async (req, res) => res.json(await q("select e.status,e.reason,e.created_at,u.username from moderation_events e left join users u on u.id=e.actor_id where e.listing_id=$1 order by e.id desc", [req.params.id]))));

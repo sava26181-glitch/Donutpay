@@ -84,6 +84,16 @@ catch (e) {
 const app = express(); app.set("trust proxy", 1); app.use(shieldEarly()); app.use(shieldGate());
 app.use(helmet({ contentSecurityPolicy: { directives: { defaultSrc: ["'self'"], styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com", "https://accounts.google.com"], fontSrc: ["'self'", "data:", "https://fonts.gstatic.com"], mediaSrc: ["'self'", "blob:", "data:", "https://*.supabase.co"], scriptSrc: ["'self'", "'unsafe-inline'", "https://challenges.cloudflare.com", "https://accounts.google.com", "https://itunes.apple.com"], scriptSrcAttr: ["'unsafe-inline'"], imgSrc: ["'self'", "data:", "blob:", "https://*.supabase.co", "https://*.mzstatic.com", "https://upload.wikimedia.org", "https://*.steamstatic.com", "https://*.googleusercontent.com"], connectSrc: ["'self'", "https://api.allorigins.win", "https://ru.wikipedia.org", "https://en.wikipedia.org", "https://challenges.cloudflare.com", "https://api.mymemory.translated.net", "https://accounts.google.com"], frameSrc: ["https://challenges.cloudflare.com", "https://accounts.google.com"], objectSrc: ["'none'"], baseUri: ["'self'"], frameAncestors: ["'self'"] } } }));
 app.use((_q, res, next) => { res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()"); res.setHeader("X-Permitted-Cross-Domain-Policies", "none"); next(); });
+// защита от CSRF: запрос на изменение данных с чужого сайта (заголовок Origin не наш) отклоняем
+app.use("/api", (req, res, next) => {
+  if (!["POST", "PUT", "PATCH", "DELETE"].includes(req.method) || req.path === "/payments/webhook") return next();
+  const o = req.headers.origin; if (!o) return next();
+  let h; try { h = new URL(o).host } catch { return res.status(403).json({ error: "forbidden origin" }) }
+  const mine = String(req.headers["x-forwarded-host"] || req.headers.host || "").split(",")[0].trim().toLowerCase();
+  const extra = String(process.env.ALLOWED_ORIGINS || "").split(",").map(s => s.trim().toLowerCase()).filter(Boolean);
+  if (h.toLowerCase() === mine || extra.includes(h.toLowerCase())) return next();
+  res.status(403).json({ error: "forbidden origin" });
+});
 // сжатие JSON-ответов API (список игр весит ~300 КБ, на мобильном интернете это долго)
 app.use("/api", (req, res, next) => {
   if (req.method !== "GET" || !/\bgzip\b/.test(req.headers["accept-encoding"] || "")) return next();

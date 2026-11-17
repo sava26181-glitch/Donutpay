@@ -91,7 +91,7 @@ ${d.team.length ? `<h3>Команда</h3><p class="m">Видны сотрудн
 // ---------- код подтверждения на вывод и покупку
 (function () {
   const oapi = window.api; if (typeof oapi !== "function" || oapi.__sec) return;
-  const PUR = [[/^\/finance\/withdraw$/, "withdraw", "вывод средств"], [/^\/orders$/, "purchase", "покупку"]];
+  const PUR = [[/^\/finance\/withdraw$/, "withdraw", "вывод средств"], [/^\/orders$/, "purchase", "покупку"], [/^\/orders\/[^/]+\/pay-balance$/, "purchase", "покупку"]];
   const LAST = {};
   const ask = (purpose, label, via) => new Promise(res => {
     let sent = false;
