@@ -84,6 +84,17 @@ catch (e) {
 const app = express(); app.set("trust proxy", 1); app.use(shieldEarly()); app.use(shieldGate());
 app.use(helmet({ contentSecurityPolicy: { directives: { defaultSrc: ["'self'"], styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com", "https://accounts.google.com"], fontSrc: ["'self'", "data:", "https://fonts.gstatic.com"], mediaSrc: ["'self'", "blob:", "data:", "https://*.supabase.co"], scriptSrc: ["'self'", "'unsafe-inline'", "https://challenges.cloudflare.com", "https://accounts.google.com", "https://itunes.apple.com"], scriptSrcAttr: ["'unsafe-inline'"], imgSrc: ["'self'", "data:", "blob:", "https://*.supabase.co", "https://*.mzstatic.com", "https://upload.wikimedia.org", "https://*.steamstatic.com", "https://*.googleusercontent.com"], connectSrc: ["'self'", "https://api.allorigins.win", "https://ru.wikipedia.org", "https://en.wikipedia.org", "https://challenges.cloudflare.com", "https://api.mymemory.translated.net", "https://accounts.google.com"], frameSrc: ["https://challenges.cloudflare.com", "https://accounts.google.com"], objectSrc: ["'none'"], baseUri: ["'self'"], frameAncestors: ["'self'"] } } }));
 app.use((_q, res, next) => { res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=(), payment=(), usb=()"); res.setHeader("X-Permitted-Cross-Domain-Policies", "none"); next(); });
+// сжатие JSON-ответов API (список игр весит ~300 КБ, на мобильном интернете это долго)
+app.use("/api", (req, res, next) => {
+  if (req.method !== "GET" || !/\bgzip\b/.test(req.headers["accept-encoding"] || "")) return next();
+  res.json = o => {
+    const body = JSON.stringify(o);
+    if (body.length < 2000) { res.set("Content-Type", "application/json; charset=utf-8"); return res.send(body) }
+    zlib.gzip(body, { level: 5 }, (e, buf) => { if (e) { res.set("Content-Type", "application/json; charset=utf-8"); return res.send(body) } res.set({ "Content-Encoding": "gzip", Vary: "Accept-Encoding", "Content-Type": "application/json; charset=utf-8" }); res.send(buf) });
+    return res;
+  };
+  next();
+});
 app.use(express.json({ limit: "50kb", verify: (_req, _res, buf) => { if (buf.includes(0) || /\\u0000/i.test(buf.toString("latin1"))) throw Object.assign(new Error("invalid input"), { status: 400 }); } })); app.use(cookieParser()); app.use((req, res, next) => hooks.csrf ? hooks.csrf(req, res, next) : next());
 // ---- реальное время для всех: после любого успешного изменения данных все открытые страницы получают сигнал «обновись»
 const liveC = new Set(), liveT = new Map();

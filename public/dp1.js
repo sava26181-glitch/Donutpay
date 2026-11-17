@@ -50,12 +50,18 @@
   const GRAD=[["#5B3FD0","#5B3FD0"],["#3A4A9A","#3A4A9A"],["#1F6F78","#1F6F78"],["#7A3C8C","#7A3C8C"],["#2F5FA8","#2F5FA8"],["#6B4A2F","#6B4A2F"]];
   const hs=t=>{let h=0;for(const c of t)h=(h*31+c.charCodeAt(0))>>>0;return h};
   const mono=g=>{const [a,b]=GRAD[hs(g.slug||g.name)%GRAD.length],l=gs(g.name).trim().charAt(0).toUpperCase();return `<span class="gm" style="background:linear-gradient(135deg,${a},${b})">${esc(l)}</span>`};
-  window.glist=function(){
+  // готовые обложки из базы: список приходит один раз и обновляется, пока идёт прогрев на сервере
+  let IDX=null,IDXT=0;
+  const refreshCovers=()=>document.querySelectorAll("img.gm[data-sl]").forEach(i=>{const sl=i.dataset.sl;if(IDX&&IDX[sl]&&!ART.has(sl)&&i.dataset.v!==IDX[sl]){i.dataset.v=IDX[sl];i.src="/api/cover/"+sl+"?v="+IDX[sl]}});
+  const loadIdx=()=>{if(Date.now()-IDXT<15000)return;IDXT=Date.now();fetch("/api/covers/index").then(r=>r.json()).then(o=>{IDX=o;refreshCovers()}).catch(()=>{})};
+  const coverSrc=g=>ART.has(g.slug)?`/img/games/${g.slug}.${EXT[g.slug]||"webp"}`:IDX&&IDX[g.slug]?`/api/cover/${g.slug}?v=${IDX[g.slug]}`:cover(g.slug,g.name);
+  setInterval(()=>{if(document.querySelector("img.gm[data-sl]")&&!document.hidden)loadIdx()},30000);
+  window.glist=function(){loadIdx();
     const q=GQ.toLowerCase(),a=GAMES.filter(g=>gk(g.name)!=="#"&&g.name.toLowerCase().includes(q)).sort((x,y)=>gs(x.name).localeCompare(gs(y.name),"ru"));
     if(!a.length)return empty("Игра не найдена. Проверьте запрос.");
     const L=[...new Set(a.map(g=>gk(g.name)))],pop=q?[]:GAMES.filter(g=>ART.has(g.slug));
     const top=pop.length?`<div class="gx-h">Популярные игры</div><div class="gx">${pop.map(g=>`<a class="gx-c" onclick="go('/catalog?game=${g.slug}')"><img src="/img/games/${g.slug}.${EXT[g.slug]||"webp"}" alt="" loading="lazy"><b>${esc(g.name)}</b></a>`).join("")}</div><div class="gx-h">Все игры</div>`:"";
-    return top+`<nav class="ai">${L.map(l=>`<a onclick="azGo('${l}')">${l}</a>`).join("")}</nav>`+L.map(l=>`<div class="lh" id="L-${l}">${l}</div><div class="lgrid">${a.filter(g=>gk(g.name)===l).map(g=>`<div class="lr"><img class="gm" src="${ART.has(g.slug)?`/img/games/${g.slug}.${EXT[g.slug]||"webp"}`:`/api/cover/${g.slug}`}" alt="" loading="lazy"><div class="gt"><a class="gn" onclick="go('/catalog?game=${g.slug}')">${esc(g.name)}</a><div class="gcs">${(g.cats||[]).map(c=>`<a onclick="go('/catalog?game=${g.slug}&category=${c.slug}')">${esc(c.label)}</a>`).join("")}</div></div></div>`).join("")}</div>`).join("");
+    return top+`<nav class="ai">${L.map(l=>`<a onclick="azGo('${l}')">${l}</a>`).join("")}</nav>`+L.map(l=>`<div class="lh" id="L-${l}">${l}</div><div class="lgrid">${a.filter(g=>gk(g.name)===l).map(g=>`<div class="lr"><img class="gm" data-sl="${g.slug}" src="${coverSrc(g)}" alt="" decoding="async" loading="lazy"><div class="gt"><a class="gn" onclick="go('/catalog?game=${g.slug}')">${esc(g.name)}</a><div class="gcs">${(g.cats||[]).map(c=>`<a onclick="go('/catalog?game=${g.slug}&category=${c.slug}')">${esc(c.label)}</a>`).join("")}</div></div></div>`).join("")}</div>`).join("");
   };
 
   // ---------- обложки для всех игр: если картинки нет, рисуем свою (разный узор и цвет для каждой игры)

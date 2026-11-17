@@ -3,7 +3,7 @@
 import { createHash } from "node:crypto";
 export default function routesCovers(app, { q, wrap, need, E }) {
   const env = process.env;
-  q("create table if not exists game_covers(slug text primary key, ext text, data bytea, miss boolean not null default false, at timestamptz not null default now())").then(() => q("alter table game_covers add column if not exists sha text")).then(() => q("delete from game_covers where miss")).then(() => setTimeout(warm, 20000)).catch(e => console.warn("[covers]", e.message));
+  q("create table if not exists game_covers(slug text primary key, ext text, data bytea, miss boolean not null default false, at timestamptz not null default now())").then(() => q("alter table game_covers add column if not exists sha text")).then(() => q("delete from game_covers where miss")).then(() => setTimeout(warm, 5000)).catch(e => console.warn("[covers]", e.message));
   const norm = s => String(s).toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
   const TR = { а: "a", б: "b", в: "v", г: "g", д: "d", е: "e", ё: "e", ж: "zh", з: "z", и: "i", й: "i", к: "k", л: "l", м: "m", н: "n", о: "o", п: "p", р: "r", с: "s", т: "t", у: "u", ф: "f", х: "h", ц: "c", ч: "ch", ш: "sh", щ: "sh", ъ: "", ы: "y", ь: "", э: "e", ю: "u", я: "a" };
   const skel = s => norm(s).replace(/[а-яё]/g, c => TR[c] ?? "").replace(/(.)\1+/g, "$1").replace(/y/g, "i").replace(/\s+/g, " ");
@@ -17,7 +17,7 @@ export default function routesCovers(app, { q, wrap, need, E }) {
     const A = toks(a), B = toks(b); if (!A.length || !B.length) return false;
     const common = A.filter(w => B.includes(w)).length; return common / Math.max(A.length, B.length) >= 0.75;
   };
-  const get = async (u, ms = 8000) => { const c = new AbortController(), t = setTimeout(() => c.abort(), ms); try { return await fetch(u, { signal: c.signal, headers: { "User-Agent": "Mozilla/5.0 DonutPay" } }) } finally { clearTimeout(t) } };
+  const get = async (u, ms = 6000) => { const c = new AbortController(), t = setTimeout(() => c.abort(), ms); try { return await fetch(u, { signal: c.signal, headers: { "User-Agent": "Mozilla/5.0 DonutPay" } }) } finally { clearTimeout(t) } };
   const J = async u => { const r = await get(u); if (!r.ok) throw new Error(r.status); return r.json() };
   const B = async u => { if (!u) return null; const r = await get(u); if (!r.ok) return null; const b = Buffer.from(await r.arrayBuffer()); return b.length > 2000 && b.length < 4e6 ? b : null };
   const src = [
@@ -51,13 +51,17 @@ export default function routesCovers(app, { q, wrap, need, E }) {
     if (b) { sha = createHash("sha1").update(b).digest("hex"); try { const [d] = await q("select 1 from game_covers where sha=$1 and slug<>$2 limit 1", [sha, slug]); if (d) b = null } catch { } } // одинаковая картинка у разных игр не нужна: у второй будет своя нарисованная
     await q("insert into game_covers(slug,ext,data,miss,at,sha) values($1,'img',$2,$3,now(),$4) on conflict(slug) do update set data=$2,miss=$3,at=now(),sha=$4", [slug, b, !b, b ? sha : null]).catch(() => { }); return b }).finally(() => busy.delete(slug)); busy.set(slug, p); return p };
   // прогрев: после старта в фоне подбираем обложки всем играм, чтобы страница не ждала поиск
+  let warming = false;
   async function warm() {
+    if (warming) return; warming = true;
     try {
-      const gs = await q("select g.slug,g.name from games g left join game_covers c on c.slug=g.slug where g.is_active and c.slug is null order by g.name");
-      for (const g of gs) { await find(g.slug, g.name).catch(() => { }); await new Promise(r => setTimeout(r, 400)) }
-      console.log("[covers] прогрев готов: " + gs.length);
-    } catch (e) { console.warn("[covers] прогрев:", e.message) }
+      const gs = await q("select g.slug,g.name from games g left join game_covers c on c.slug=g.slug where g.is_active and (c.slug is null or (c.miss and c.at < now()-interval '1 day')) order by (select count(*) from listings l where l.game_id=g.id) desc, g.name");
+      let i = 0, ok = 0; const worker = async () => { while (i < gs.length) { const g = gs[i++]; const b = await find(g.slug, g.name).catch(() => null); if (b) ok++; await new Promise(r => setTimeout(r, 150)) } };
+      await Promise.all([worker(), worker(), worker()]);
+      console.log(`[covers] прогрев готов: найдено ${ok} из ${gs.length}`);
+    } catch (e) { console.warn("[covers] прогрев:", e.message) } finally { warming = false }
   }
+  setInterval(() => warm(), 2 * 3600e3).unref?.(); // раз в 2 часа добираем недостающие
   // обложки, найденные браузером сотрудника: сервер сам скачивает картинку (только с разрешённых сайтов) и кэширует для всех
   const HOST = /^https:\/\/([a-z0-9-]+\.)*(mzstatic\.com|wikimedia\.org|steamstatic\.com|googleusercontent\.com|rustore\.ru)\//i;
   const isStaff = async req => { const [u] = await q("select role from users where id=$1", [req.user.id]); return ["moderator", "admin", "owner"].includes(u?.role) };
@@ -82,15 +86,20 @@ export default function routesCovers(app, { q, wrap, need, E }) {
     const out = []; for (let i = 0; i < src.length; i++) { const t = Date.now(); try { const b = await src[i](g.name); out.push({ source: i, found: !!b, bytes: b ? b.length : 0, ms: Date.now() - t }) } catch (e) { out.push({ source: i, error: String(e.message || e), ms: Date.now() - t }) } }
     res.json({ name: g.name, sources: out });
   }));
+  // список готовых обложек: клиент по нему сразу решает, что показывать (без ожидания и лишних запросов)
+  app.get("/api/covers/index", wrap(async (req, res) => {
+    const rows = await q("select slug, left(sha,8) v from game_covers where not miss and sha is not null");
+    const o = {}; for (const r of rows) o[r.slug] = r.v;
+    res.set("Cache-Control", "public, max-age=20").json(o);
+  }));
   app.get("/api/cover/:slug", wrap(async (req, res) => {
     const slug = String(req.params.slug || ""); if (!/^[a-z0-9-]{1,80}$/.test(slug)) return res.status(404).end();
-    res.set("Cache-Control", "public, max-age=86400");
     const [c] = await q("select data,miss,at from game_covers where slug=$1", [slug]);
     if (c && typeof c.data === "string") c.data = Buffer.from(c.data.replace(/^\\x/, ""), "hex");
-    if (c && c.data) return res.set("Content-Type", mime(c.data)).send(c.data);
-    if (c && c.miss && Date.now() - new Date(c.at).getTime() < 864e5) return res.status(404).end();
-    const [g] = await q("select name from games where slug=$1", [slug]); if (!g) return res.status(404).end();
-    const b = await find(slug, g.name);
-    return b ? res.set("Content-Type", mime(b)).send(b) : res.status(404).end();
+    if (c && c.data) return res.set("Cache-Control", "public, max-age=604800, immutable").set("Content-Type", mime(c.data)).send(c.data);
+    res.set("Cache-Control", "no-store");
+    // нет в базе: ответ сразу (клиент покажет нарисованную обложку), а поиск идёт в фоне
+    if (!(c && c.miss && Date.now() - new Date(c.at).getTime() < 864e5)) { const [g] = await q("select name from games where slug=$1", [slug]); if (g) find(slug, g.name).catch(() => { }) }
+    return res.status(404).end();
   }));
 }
